@@ -53,6 +53,7 @@ defmodule Typst.MixProject do
   defp deps do
     [
       {:mix_test_watch, "~> 1.2", only: :test},
+      {:tz, "~> 0.28", only: :test},
       {:ex_doc, ">= 0.0.0", only: :docs},
       {:git_ops, "~> 2.6.1", only: :dev},
       {:rustler, "~> 0.35"},

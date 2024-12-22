@@ -1,12 +1,53 @@
 defprotocol Typst.Code do
   @moduledoc """
-  Encode Elixir data structures into Typst code syntax.
+  Functions to support Typst code syntax.
   """
 
   @doc """
-  Convert Elixir data into Typst code.
+  Encode Elixir data structures into Typst code syntax.
+
+  ## Examples
+
+      iex> Typst.Code.encode(~U[2015-01-13 13:00:07Z], [timezone: "America/New_York"])
+      "datetime(year: 2015, month: 1, day: 13, hour: 8, minute: 0, second: 7)"
+
+      iex> Typst.Code.encode(nil)
+      "none"
+
+      iex> Typst.Code.encode(%{true: true, false: false, other: :other})
+      "(\\"false\\": false, \\"true\\": true, \\"other\\": \\"other\\")"
+
+      iex> Typst.Code.encode(["one", 2, 3.0])
+      "(\\"one\\", int(2), float(3.0))"
+
+  The following types are supported by default:
+
+  - `Map` -> [`dictionary`](https://typst.app/docs/reference/foundations/dictionary/)
+  - `List` -> [`array`](https://typst.app/docs/reference/foundations/array/)
+  - `Decimal` -> [`decimal`](https://typst.app/docs/reference/foundations/decimal/)
+  - `DateTime` -> [`datetime`](https://typst.app/docs/reference/foundations/datetime/)
+  - `NaiveDateTime` -> [`datetime`](https://typst.app/docs/reference/foundations/datetime/)
+  - `Date` -> [`datetime`](https://typst.app/docs/reference/foundations/datetime/)
+  - `Time` -> [`datetime`](https://typst.app/docs/reference/foundations/datetime/)
+  - `Integer` -> [`int`](https://typst.app/docs/reference/foundations/int/)
+  - `Float` -> [`float`](https://typst.app/docs/reference/foundations/float/)
+  - `String` -> [`str`](https://typst.app/docs/reference/foundations/str/)
+  - `Atom` converts one of several Typst types:
+    - `nil` -> [`none`](https://typst.app/docs/reference/foundations/none/)
+    - `true`/`false` -> [`bool`](https://typst.app/docs/reference/foundations/bool/)
+    - All others -> [`str`](https://typst.app/docs/reference/foundations/str/)
+  - `Ash.Resource` (public fields) -> [`dictionary`](https://typst.app/docs/reference/foundations/dictionary/)
+  - `Ash.NotLoaded` -> [`none`](https://typst.app/docs/reference/foundations/none/)
+  - `Ash.CiString` -> [`str`](https://typst.app/docs/reference/foundations/str/)
 
   Context must be passed through. This allows for things like dates to be formatted according to a given timezone, etc.
+
+  If `timezone` is specified in the context, supported types will be automatically shifted to that zone. Ensure you install and configure the timezone database in `config.exs`:
+
+  ```elixir
+  config :elixir, :time_zone_database, Tz.TimeZoneDatabase
+  ```
+
   """
   def encode(value, context \\ [])
 end
@@ -49,10 +90,6 @@ defimpl Typst.Code, for: Any do
 end
 
 defimpl Typst.Code, for: Map do
-  @doc """
-  An Elixir `Map` converts to a [Typst `dictionary`](https://typst.app/docs/reference/foundations/dictionary/).
-  """
-
   def encode(%{} = map, _context) when map_size(map) == 0, do: "(:)"
 
   def encode(map, context) do
@@ -66,9 +103,6 @@ defimpl Typst.Code, for: Map do
 end
 
 defimpl Typst.Code, for: List do
-  @doc """
-  An Elixir `List` converts to a [Typst `array`](https://typst.app/docs/reference/foundations/array/).
-  """
   def encode([], _context), do: "()"
   def encode([value], context), do: "(#{Typst.Code.encode(value, context)},)"
 
@@ -81,17 +115,6 @@ defimpl Typst.Code, for: List do
 end
 
 defimpl Typst.Code, for: DateTime do
-  @doc """
-  An Elixir `DateTime` converts to a [Typst `datetime`](https://typst.app/docs/reference/foundations/datetime/).
-
-  If `timezone` is specified in the context, it will automatically be converted.
-
-  Ensure you install and configure the timezone database in `config.exs`:
-
-  ```elixir
-  config :elixir, :time_zone_database, CustomTimeZoneDatabase
-  ```
-  """
   def encode(datetime, context) do
     timezone = context[:timezone] || "Etc/UTC"
 
@@ -103,9 +126,6 @@ defimpl Typst.Code, for: DateTime do
 end
 
 defimpl Typst.Code, for: NaiveDateTime do
-  @doc """
-  An Elixir `NaiveDateTime` converts to a [Typst `datetime`](https://typst.app/docs/reference/foundations/datetime/).
-  """
   def encode(
         %{year: year, month: month, day: day, hour: hour, minute: minute, second: second},
         _context
@@ -115,18 +135,12 @@ defimpl Typst.Code, for: NaiveDateTime do
 end
 
 defimpl Typst.Code, for: Date do
-  @doc """
-  An Elixir `Date` converts to a [Typst `datetime`](https://typst.app/docs/reference/foundations/datetime/).
-  """
   def encode(%{year: year, month: month, day: day}, _context) do
     "datetime(year: #{year}, month: #{month}, day: #{day})"
   end
 end
 
 defimpl Typst.Code, for: Time do
-  @doc """
-  An Elixir `Time` converts to a [Typst `datetime`](https://typst.app/docs/reference/foundations/datetime/).
-  """
   def encode(
         %{hour: hour, minute: minute, second: second},
         _context
@@ -136,23 +150,14 @@ defimpl Typst.Code, for: Time do
 end
 
 defimpl Typst.Code, for: Integer do
-  @doc """
-  An Elixir `Integer` converts to a [Typst `int`](https://typst.app/docs/reference/foundations/int/).
-  """
   def encode(integer, _context), do: "int(#{integer})"
 end
 
 defimpl Typst.Code, for: Float do
-  @doc """
-  An Elixir `Float` converts to a [Typst `float`](https://typst.app/docs/reference/foundations/float/).
-  """
   def encode(float, _context), do: "float(#{float})"
 end
 
 defimpl Typst.Code, for: BitString do
-  @doc """
-  An Elixir `BitString` converts to a [Typst `str`](https://typst.app/docs/reference/foundations/str/).
-  """
   def encode(string, _context) do
     escaped =
       string
@@ -167,13 +172,6 @@ defimpl Typst.Code, for: BitString do
 end
 
 defimpl Typst.Code, for: Atom do
-  @doc """
-  An Elixir `Atom` converts one of several Typst types:
-
-  - `nil` -> [`none`](https://typst.app/docs/reference/foundations/none/)
-  - `true`/`false` -> [`bool`](https://typst.app/docs/reference/foundations/bool/)
-  - All others -> [`str`](https://typst.app/docs/reference/foundations/str/)
-  """
   def encode(nil, _context), do: "none"
   def encode(true, _context), do: "true"
   def encode(false, _context), do: "false"
@@ -183,9 +181,6 @@ end
 case Code.ensure_compiled(Decimal) do
   {:module, _} ->
     defimpl Typst.Code, for: Decimal do
-      @doc """
-      An Elixir `Decimal` converts to a [Typst `decimal`](https://typst.app/docs/reference/foundations/decimal/).
-      """
       def encode(decimal, _context), do: "decimal(#{decimal})"
     end
 
