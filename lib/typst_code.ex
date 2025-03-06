@@ -8,7 +8,7 @@ defprotocol Typst.Code do
 
   ## Examples
 
-      iex> Typst.Code.encode(~U[2015-01-13 13:00:07Z], [timezone: "America/New_York"])
+      iex> Typst.Code.encode(~U[2015-01-13 13:00:07Z], %{timezone: "America/New_York"})
       "datetime(year: 2015, month: 1, day: 13, hour: 8, minute: 0, second: 7)"
 
       iex> Typst.Code.encode(nil)
@@ -49,42 +49,52 @@ defprotocol Typst.Code do
   ```
 
   """
-  def encode(value, context \\ [])
+  def encode(value, context \\ %{})
 end
 
 defimpl Typst.Code, for: Any do
   def encode(%{} = map, _context) when map_size(map) == 0, do: "(:)"
+
+  def encode(%{__struct__: module} = map, %{struct_keys: struct_keys} = context) do
+    stripped =
+      case struct_keys do
+        %{^module => keys} -> Map.take(map, keys)
+        _ -> auto_strip(map)
+      end
+
+    Typst.Code.encode(stripped, context)
+  end
 
   def encode(map, context) do
     stripped = auto_strip(map)
     Typst.Code.encode(stripped, context)
   end
 
+  @struct_drop_keys [:__struct__]
   case Code.ensure_compiled(Ash) do
     {:module, _} ->
       defp auto_strip(%{__struct__: module} = map) do
         if Ash.Resource.Info.resource?(module) do
-          relationship_keys =
+          loadable_keys =
             module
-            |> Ash.Resource.Info.public_relationships()
-            |> Enum.map(& &1.name)
+            |> Ash.Resource.Info.public_fields()
+            |> Enum.reduce([], fn
+              %{name: name, type: :attribute}, acc ->
+                if name in map.__metadata__.selected, do: [name | acc], else: acc
 
-          selected_keys =
-            module
-            |> Ash.Resource.Info.public_attributes()
-            |> Enum.reduce([], fn %{name: name}, acc ->
-              if name in map.__metadata__.selected, do: [name | acc], else: acc
+              %{name: name}, acc ->
+                [name | acc]
             end)
 
-          Map.take(map, [:calculations, :aggregates] ++ relationship_keys ++ selected_keys)
+          Map.take(map, [:calculations, :aggregates] ++ loadable_keys)
         else
-          Map.delete(map, :__struct__)
+          Map.drop(map, @struct_drop_keys)
         end
       end
 
     _ ->
       defp auto_strip(%{__struct__: _} = map) do
-        Map.delete(map, :__struct__)
+        Map.drop(map, @struct_drop_keys)
       end
   end
 end
@@ -116,7 +126,7 @@ end
 
 defimpl Typst.Code, for: DateTime do
   def encode(datetime, context) do
-    timezone = context[:timezone] || "Etc/UTC"
+    timezone = context.timezone || "Etc/UTC"
 
     %{year: year, month: month, day: day, hour: hour, minute: minute, second: second} =
       DateTime.shift_zone!(datetime, timezone)
