@@ -1,15 +1,16 @@
 use chrono::{DateTime, Datelike, FixedOffset, Local, Utc};
 use ecow::EcoVec;
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use rustler::{Error, NifResult};
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use std::sync::OnceLock;
 use std::{fs, mem};
 use typst::diag::{FileError, FileResult, SourceDiagnostic};
 use typst::foundations::{Bytes, Datetime};
+use typst::layout::PagedDocument;
 use typst::syntax::{FileId, Source, VirtualPath};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
@@ -20,7 +21,8 @@ use typst_kit::package::PackageStorage;
 use typst_pdf::PdfOptions;
 use typst_timing::{timed, TimingScope};
 
-static MARKUP_ID: Lazy<FileId> = Lazy::new(|| FileId::new_fake(VirtualPath::new("MARKUP.tsp")));
+static MARKUP_ID: LazyLock<FileId> =
+    LazyLock::new(|| FileId::new_fake(VirtualPath::new("MARKUP.tsp")));
 
 pub struct SystemWorld {
     root: PathBuf,
@@ -88,7 +90,7 @@ impl SystemWorld {
             .expect("file id does not point to any source file")
     }
     pub fn preview(&mut self) -> NifResult<(String, String)> {
-        let result = typst::compile(self);
+        let result = typst::compile::<PagedDocument>(self);
         match result.output {
             Ok(document) => Ok((
                 typst_svg::svg(&document.pages[0]),
@@ -99,17 +101,16 @@ impl SystemWorld {
     }
 
     pub fn export_pdf(&mut self) -> NifResult<(String, String)> {
-        let result = typst::compile(self);
+        let result = typst::compile::<PagedDocument>(self);
         match result.output {
             Ok(document) => {
                 let opts = PdfOptions::default();
                 match typst_pdf::pdf(&document, &opts) {
-                    Ok(pdf_bytes) => unsafe {
-                        return Ok((
-                            String::from_utf8_unchecked(pdf_bytes),
-                            diagnostics_to_string(result.warnings),
-                        ));
-                    },
+                    Ok(pdf_bytes) => {
+                        // PDF bytes are not valid UTF-8, so we use Latin-1 encoding for binary data
+                        let pdf_string = pdf_bytes.iter().map(|&b| b as char).collect::<String>();
+                        return Ok((pdf_string, diagnostics_to_string(result.warnings)));
+                    }
                     Err(e) => Err(diagnostics_to_rustler_error(e)),
                 }
             }
@@ -229,7 +230,7 @@ impl FileSlot {
                 } else {
                     "parsing file"
                 };
-                let _scope = TimingScope::new(name, None);
+                let _scope = TimingScope::new(name);
                 let text = decode_utf8(&data)?;
                 if let Some(mut prev) = prev {
                     prev.replace(text);
@@ -245,7 +246,7 @@ impl FileSlot {
     fn file(&mut self, project_root: &Path, package_storage: &PackageStorage) -> FileResult<Bytes> {
         self.file.get_or_init(
             || read(self.id, project_root, package_storage),
-            |data, _| Ok(data.into()),
+            |data, _| Ok(Bytes::new(data)),
         )
     }
 }
@@ -313,12 +314,22 @@ impl<T: Clone> SlotCell<T> {
     }
 }
 
-// TOOD: Maybe message progress back to caller PID for downloads.
-pub struct PrintDownload<T>(pub T);
-impl<T: Display> Progress for PrintDownload<T> {
-    fn print_start(&mut self) {}
-    fn print_progress(&mut self, _state: &DownloadState) {}
-    fn print_finish(&mut self, _state: &DownloadState) {}
+/// A progress reporter for package downloads that currently does nothing.
+/// TODO: Consider implementing actual progress reporting for better user experience.
+pub struct SilentDownloadProgress<T>(pub T);
+
+impl<T: Display> Progress for SilentDownloadProgress<T> {
+    fn print_start(&mut self) {
+        // Silent implementation - no output
+    }
+
+    fn print_progress(&mut self, _state: &DownloadState) {
+        // Silent implementation - no output
+    }
+
+    fn print_finish(&mut self, _state: &DownloadState) {
+        // Silent implementation - no output
+    }
 }
 
 /// Resolves the path of a file id on the system, downloading a package if
@@ -333,7 +344,7 @@ fn system_path(
     let buf;
     let mut root = project_root;
     if let Some(spec) = id.package() {
-        buf = package_storage.prepare_package(spec, &mut PrintDownload(&spec))?;
+        buf = package_storage.prepare_package(spec, &mut SilentDownloadProgress(&spec))?;
         root = &buf;
     }
 
@@ -367,56 +378,64 @@ fn decode_utf8(buf: &[u8]) -> FileResult<&str> {
 enum Now {
     /// The date and time if the environment `SOURCE_DATE_EPOCH` is set.
     /// Used for reproducible builds.
+    #[allow(dead_code)]
     Fixed(DateTime<Utc>),
     /// The current date and time if the time is not externally fixed.
     System(OnceLock<DateTime<Utc>>),
 }
 
+/// Converts a collection of diagnostics to a formatted string.
 pub fn diagnostics_to_string(diagnostics: EcoVec<SourceDiagnostic>) -> String {
-    let messages: Vec<String> = diagnostics
+    diagnostics
         .iter()
-        .map(|diag| format_diagnostic(diag))
-        .collect();
-    messages.join("\n\n")
+        .map(format_diagnostic)
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
+/// Converts diagnostics to a Rustler error.
 pub fn diagnostics_to_rustler_error(diagnostics: EcoVec<SourceDiagnostic>) -> Error {
     Error::Term(Box::new(diagnostics_to_string(diagnostics)))
 }
 
+/// Formats a single diagnostic message.
 fn format_diagnostic(diagnostic: &SourceDiagnostic) -> String {
+    let severity = format!("{:?}", diagnostic.severity);
+    let span = format!("{:?}", diagnostic.span);
+    let trace = format!("{:?}", diagnostic.trace);
+    let hints = format!("{:?}", diagnostic.hints);
+
     format!(
-        "Severity: {:?}\nSpan: {:?}\nMessage: {}\nTrace: {:?}\nHints: {:?}",
-        diagnostic.severity,
-        diagnostic.span,
-        diagnostic.message,
-        diagnostic.trace,
-        diagnostic.hints
+        "Severity: {severity}\nSpan: {span}\nMessage: {}\nTrace: {trace}\nHints: {hints}",
+        diagnostic.message
     )
 }
 
+/// Compiles Typst markup and returns the first page as SVG.
+/// Returns a tuple of (svg_content, warnings).
 #[rustler::nif(schedule = "DirtyCpu")]
 fn preview(markup: String) -> NifResult<(String, String)> {
     let mut world = SystemWorld::new(".".into(), markup);
     world.preview()
 }
 
+/// Compiles Typst markup and exports as PDF.
+/// Returns a tuple of (pdf_bytes_as_string, warnings).
 #[rustler::nif(schedule = "DirtyCpu")]
 fn export_pdf(markup: String) -> NifResult<(String, String)> {
     let mut world = SystemWorld::new(".".into(), markup);
     world.export_pdf()
 }
 
+/// Returns a list of available system font families.
 #[rustler::nif(schedule = "DirtyIo")]
 fn font_families() -> Vec<String> {
     let fonts = Fonts::searcher().include_system_fonts(true).search();
-    let families: Vec<String> = fonts
+    fonts
         .book
         .families()
         .map(|(name, _info)| name.to_string())
-        .collect();
-
-    families
+        .collect()
 }
 
 rustler::init!("Elixir.Typst.NIF");
