@@ -1,7 +1,7 @@
 use chrono::{DateTime, Datelike, FixedOffset, Local, Utc};
 use ecow::EcoVec;
 use parking_lot::Mutex;
-use rustler::{Error, NifResult};
+use rustler::{Atom, Decoder, Encoder, Env, Error, NifResult, NifStruct, Term};
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
@@ -9,6 +9,7 @@ use std::sync::LazyLock;
 use std::sync::OnceLock;
 use std::{fs, mem};
 use typst::diag::{FileError, FileResult, SourceDiagnostic};
+use typst::foundations::Smart;
 use typst::foundations::{Bytes, Datetime};
 use typst::layout::PagedDocument;
 use typst::syntax::{FileId, Source, VirtualPath};
@@ -18,11 +19,127 @@ use typst::{Library, World};
 use typst_kit::download::{DownloadState, Downloader, Progress};
 use typst_kit::fonts::{FontSlot, Fonts};
 use typst_kit::package::PackageStorage;
-use typst_pdf::PdfOptions;
+use typst_pdf::{PdfOptions, PdfStandard, PdfStandards};
 use typst_timing::{timed, TimingScope};
 
 static MARKUP_ID: LazyLock<FileId> =
     LazyLock::new(|| FileId::new_fake(VirtualPath::new("MARKUP.tsp")));
+
+#[derive(NifStruct)]
+#[module = "AshTypst.PreviewOptions"]
+pub struct PreviewOptionsNif {
+    pub font_paths: Vec<String>,
+    pub ignore_system_fonts: bool,
+}
+
+#[derive(NifStruct)]
+#[module = "AshTypst.PDFOptions"]
+pub struct PdfOptionsNif {
+    pub pages: Option<String>,
+    pub pdf_standards: Vec<PdfStandardNif>,
+    pub document_id: Option<String>,
+    pub font_paths: Vec<String>,
+    pub ignore_system_fonts: bool,
+}
+
+#[derive(NifStruct)]
+#[module = "AshTypst.FontOptions"]
+pub struct FontOptionsNif {
+    pub font_paths: Vec<String>,
+    pub ignore_system_fonts: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PdfStandardNif {
+    Pdf17,
+    PdfA2b,
+    PdfA3b,
+}
+
+impl Decoder<'_> for PdfStandardNif {
+    fn decode(term: Term) -> Result<Self, rustler::Error> {
+        let atom: Atom = term.decode()?;
+
+        if atom == pdf_1_7() {
+            Ok(PdfStandardNif::Pdf17)
+        } else if atom == pdf_a_2b() {
+            Ok(PdfStandardNif::PdfA2b)
+        } else if atom == pdf_a_3b() {
+            Ok(PdfStandardNif::PdfA3b)
+        } else {
+            Err(rustler::Error::BadArg)
+        }
+    }
+}
+
+impl Encoder for PdfStandardNif {
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
+        match self {
+            PdfStandardNif::Pdf17 => pdf_1_7().encode(env),
+            PdfStandardNif::PdfA2b => pdf_a_2b().encode(env),
+            PdfStandardNif::PdfA3b => pdf_a_3b().encode(env),
+        }
+    }
+}
+
+impl From<PdfStandardNif> for PdfStandard {
+    fn from(standard: PdfStandardNif) -> Self {
+        match standard {
+            PdfStandardNif::Pdf17 => PdfStandard::V_1_7,
+            PdfStandardNif::PdfA2b => PdfStandard::A_2b,
+            PdfStandardNif::PdfA3b => PdfStandard::A_3b,
+        }
+    }
+}
+
+impl PdfOptionsNif {
+    fn to_pdf_options(&self) -> Result<PdfOptions, Error> {
+        let mut opts = PdfOptions::default();
+
+        if let Some(ref document_id) = self.document_id {
+            opts.ident = Smart::Custom(document_id.as_str());
+        }
+
+        if !self.pdf_standards.is_empty() {
+            let standards: Vec<PdfStandard> =
+                self.pdf_standards.iter().map(|&s| s.into()).collect();
+            opts.standards = PdfStandards::new(&standards)
+                .map_err(|e| Error::Term(Box::new(format!("Invalid PDF standards: {}", e))))?;
+        }
+
+        Ok(opts)
+    }
+}
+
+impl PreviewOptionsNif {
+    fn get_font_paths(&self) -> &Vec<String> {
+        &self.font_paths
+    }
+
+    fn should_ignore_system_fonts(&self) -> bool {
+        self.ignore_system_fonts
+    }
+}
+
+impl FontOptionsNif {
+    fn get_font_paths(&self) -> &Vec<String> {
+        &self.font_paths
+    }
+
+    fn should_ignore_system_fonts(&self) -> bool {
+        self.ignore_system_fonts
+    }
+}
+
+impl PdfOptionsNif {
+    fn get_font_paths(&self) -> &Vec<String> {
+        &self.font_paths
+    }
+
+    fn should_ignore_system_fonts(&self) -> bool {
+        self.ignore_system_fonts
+    }
+}
 
 pub struct SystemWorld {
     root: PathBuf,
@@ -39,7 +156,47 @@ pub struct SystemWorld {
 impl SystemWorld {
     /// Create a new system world.
     pub fn new(root: PathBuf, markup: String) -> Self {
-        let fonts = Fonts::searcher().include_system_fonts(true).search();
+        Self::with_font_options(root, markup, Vec::<String>::new(), false)
+    }
+
+    /// Create a new system world with custom font paths.
+    pub fn with_font_paths<I, P>(root: PathBuf, markup: String, font_paths: I) -> Self
+    where
+        I: IntoIterator<Item = P>,
+        P: AsRef<Path>,
+    {
+        Self::with_font_options(root, markup, font_paths, false)
+    }
+
+    /// Create a new system world with font options.
+    pub fn with_font_options<I, P>(
+        root: PathBuf,
+        markup: String,
+        font_paths: I,
+        ignore_system_fonts: bool,
+    ) -> Self
+    where
+        I: IntoIterator<Item = P>,
+        P: AsRef<Path>,
+    {
+        let font_paths_vec: Vec<PathBuf> = font_paths
+            .into_iter()
+            .map(|p| p.as_ref().to_path_buf())
+            .filter(|p| p.exists() && p.is_dir())
+            .collect();
+
+        let include_system_fonts = !ignore_system_fonts;
+
+        let fonts = if font_paths_vec.is_empty() {
+            Fonts::searcher()
+                .include_system_fonts(include_system_fonts)
+                .search()
+        } else {
+            Fonts::searcher()
+                .include_system_fonts(include_system_fonts)
+                .search_with(font_paths_vec)
+        };
+
         let user_agent = concat!("typst/", env!("CARGO_PKG_VERSION"));
         Self {
             root,
@@ -100,16 +257,16 @@ impl SystemWorld {
         }
     }
 
-    pub fn export_pdf(&mut self) -> NifResult<(String, String)> {
+    pub fn export_pdf(&mut self, pdf_opts: &PdfOptionsNif) -> NifResult<(String, String)> {
         let result = typst::compile::<PagedDocument>(self);
         match result.output {
             Ok(document) => {
-                let opts = PdfOptions::default();
+                let opts = pdf_opts.to_pdf_options()?;
                 match typst_pdf::pdf(&document, &opts) {
                     Ok(pdf_bytes) => {
                         // PDF bytes are not valid UTF-8, so we use Latin-1 encoding for binary data
                         let pdf_string = pdf_bytes.iter().map(|&b| b as char).collect::<String>();
-                        return Ok((pdf_string, diagnostics_to_string(result.warnings)));
+                        Ok((pdf_string, diagnostics_to_string(result.warnings)))
                     }
                     Err(e) => Err(diagnostics_to_rustler_error(e)),
                 }
@@ -146,7 +303,7 @@ impl World for SystemWorld {
     }
 
     fn font(&self, index: usize) -> Option<Font> {
-        self.fonts[index].get()
+        self.fonts.get(index)?.get()
     }
 
     fn today(&self, offset: Option<i64>) -> Option<Datetime> {
@@ -332,15 +489,11 @@ impl<T: Display> Progress for SilentDownloadProgress<T> {
     }
 }
 
-/// Resolves the path of a file id on the system, downloading a package if
-/// necessary.
 fn system_path(
     project_root: &Path,
     id: FileId,
     package_storage: &PackageStorage,
 ) -> FileResult<PathBuf> {
-    // Determine the root path relative to which the file path
-    // will be resolved.
     let buf;
     let mut root = project_root;
     if let Some(spec) = id.package() {
@@ -374,7 +527,6 @@ fn decode_utf8(buf: &[u8]) -> FileResult<&str> {
     )?)
 }
 
-/// The current date and time.
 enum Now {
     /// The date and time if the environment `SOURCE_DATE_EPOCH` is set.
     /// Used for reproducible builds.
@@ -384,7 +536,6 @@ enum Now {
     System(OnceLock<DateTime<Utc>>),
 }
 
-/// Converts a collection of diagnostics to a formatted string.
 pub fn diagnostics_to_string(diagnostics: EcoVec<SourceDiagnostic>) -> String {
     diagnostics
         .iter()
@@ -393,12 +544,10 @@ pub fn diagnostics_to_string(diagnostics: EcoVec<SourceDiagnostic>) -> String {
         .join("\n\n")
 }
 
-/// Converts diagnostics to a Rustler error.
 pub fn diagnostics_to_rustler_error(diagnostics: EcoVec<SourceDiagnostic>) -> Error {
     Error::Term(Box::new(diagnostics_to_string(diagnostics)))
 }
 
-/// Formats a single diagnostic message.
 fn format_diagnostic(diagnostic: &SourceDiagnostic) -> String {
     let severity = format!("{:?}", diagnostic.severity);
     let span = format!("{:?}", diagnostic.span);
@@ -411,26 +560,57 @@ fn format_diagnostic(diagnostic: &SourceDiagnostic) -> String {
     )
 }
 
-/// Compiles Typst markup and returns the first page as SVG.
-/// Returns a tuple of (svg_content, warnings).
 #[rustler::nif(schedule = "DirtyCpu")]
-fn preview(markup: String) -> NifResult<(String, String)> {
-    let mut world = SystemWorld::new(".".into(), markup);
+fn preview(markup: String, opts: PreviewOptionsNif) -> NifResult<(String, String)> {
+    let font_paths = opts.get_font_paths().clone();
+    let mut world = SystemWorld::with_font_options(
+        ".".into(),
+        markup,
+        font_paths,
+        opts.should_ignore_system_fonts(),
+    );
     world.preview()
 }
 
-/// Compiles Typst markup and exports as PDF.
-/// Returns a tuple of (pdf_bytes_as_string, warnings).
 #[rustler::nif(schedule = "DirtyCpu")]
-fn export_pdf(markup: String) -> NifResult<(String, String)> {
-    let mut world = SystemWorld::new(".".into(), markup);
-    world.export_pdf()
+fn export_pdf(markup: String, opts: PdfOptionsNif) -> NifResult<(String, String)> {
+    let font_paths = opts.get_font_paths().clone();
+    let mut world = SystemWorld::with_font_options(
+        ".".into(),
+        markup,
+        font_paths,
+        opts.should_ignore_system_fonts(),
+    );
+    world.export_pdf(&opts)
 }
 
-/// Returns a list of available system font families.
 #[rustler::nif(schedule = "DirtyIo")]
-fn font_families() -> Vec<String> {
-    let fonts = Fonts::searcher().include_system_fonts(true).search();
+fn font_families(opts: FontOptionsNif) -> Vec<String> {
+    let include_system_fonts = !opts.should_ignore_system_fonts();
+
+    let fonts = if !opts.get_font_paths().is_empty() {
+        let font_paths_vec: Vec<PathBuf> = opts
+            .get_font_paths()
+            .iter()
+            .map(PathBuf::from)
+            .filter(|p| p.exists() && p.is_dir())
+            .collect();
+
+        if font_paths_vec.is_empty() {
+            Fonts::searcher()
+                .include_system_fonts(include_system_fonts)
+                .search()
+        } else {
+            Fonts::searcher()
+                .include_system_fonts(include_system_fonts)
+                .search_with(font_paths_vec)
+        }
+    } else {
+        Fonts::searcher()
+            .include_system_fonts(include_system_fonts)
+            .search()
+    };
+
     fonts
         .book
         .families()
@@ -438,4 +618,10 @@ fn font_families() -> Vec<String> {
         .collect()
 }
 
-rustler::init!("Elixir.Typst.NIF");
+rustler::atoms! {
+    pdf_1_7,
+    pdf_a_2b,
+    pdf_a_3b
+}
+
+rustler::init!("Elixir.AshTypst.NIF");

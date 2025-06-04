@@ -1,4 +1,4 @@
-defprotocol Typst.Code do
+defprotocol AshTypst.Code do
   @moduledoc """
   Functions to support Typst code syntax.
   """
@@ -8,16 +8,16 @@ defprotocol Typst.Code do
 
   ## Examples
 
-      iex> Typst.Code.encode(~U[2015-01-13 13:00:07Z], %{timezone: "America/New_York"})
+      iex> AshTypst.Code.encode(~U[2015-01-13 13:00:07Z], %{timezone: "America/New_York"})
       "datetime(year: 2015, month: 1, day: 13, hour: 8, minute: 0, second: 7)"
 
-      iex> Typst.Code.encode(nil)
+      iex> AshTypst.Code.encode(nil)
       "none"
 
-      iex> Typst.Code.encode(%{true: true, false: false, other: :other})
+      iex> AshTypst.Code.encode(%{true: true, false: false, other: :other})
       "(\\"false\\": false, \\"true\\": true, \\"other\\": \\"other\\")"
 
-      iex> Typst.Code.encode(["one", 2, 3.0])
+      iex> AshTypst.Code.encode(["one", 2, 3.0])
       "(\\"one\\", int(2), float(3.0))"
 
   The following types are supported by default:
@@ -52,7 +52,7 @@ defprotocol Typst.Code do
   def encode(value, context \\ %{})
 end
 
-defimpl Typst.Code, for: Any do
+defimpl AshTypst.Code, for: Any do
   def encode(%{} = map, _context) when map_size(map) == 0, do: "(:)"
 
   def encode(%{__struct__: module} = map, %{struct_keys: struct_keys} = context) do
@@ -62,12 +62,12 @@ defimpl Typst.Code, for: Any do
         _ -> auto_strip(map)
       end
 
-    Typst.Code.encode(stripped, context)
+    AshTypst.Code.encode(stripped, context)
   end
 
   def encode(map, context) do
     stripped = auto_strip(map)
-    Typst.Code.encode(stripped, context)
+    AshTypst.Code.encode(stripped, context)
   end
 
   @struct_drop_keys [:__struct__]
@@ -99,32 +99,32 @@ defimpl Typst.Code, for: Any do
   end
 end
 
-defimpl Typst.Code, for: Map do
+defimpl AshTypst.Code, for: Map do
   def encode(%{} = map, _context) when map_size(map) == 0, do: "(:)"
 
   def encode(map, context) do
     fields =
       Enum.map_join(map, ", ", fn
-        {key, value} -> "\"#{key}\": " <> Typst.Code.encode(value, context)
+        {key, value} -> "\"#{key}\": " <> AshTypst.Code.encode(value, context)
       end)
 
     "(#{fields})"
   end
 end
 
-defimpl Typst.Code, for: List do
+defimpl AshTypst.Code, for: List do
   def encode([], _context), do: "()"
-  def encode([value], context), do: "(#{Typst.Code.encode(value, context)},)"
+  def encode([value], context), do: "(#{AshTypst.Code.encode(value, context)},)"
 
   def encode(list, context) do
     fields =
-      Enum.map_join(list, ", ", fn value -> Typst.Code.encode(value, context) end)
+      Enum.map_join(list, ", ", fn value -> AshTypst.Code.encode(value, context) end)
 
     "(#{fields})"
   end
 end
 
-defimpl Typst.Code, for: DateTime do
+defimpl AshTypst.Code, for: DateTime do
   def encode(datetime, context) do
     timezone = context.timezone || "Etc/UTC"
 
@@ -135,7 +135,7 @@ defimpl Typst.Code, for: DateTime do
   end
 end
 
-defimpl Typst.Code, for: NaiveDateTime do
+defimpl AshTypst.Code, for: NaiveDateTime do
   def encode(
         %{year: year, month: month, day: day, hour: hour, minute: minute, second: second},
         _context
@@ -144,13 +144,13 @@ defimpl Typst.Code, for: NaiveDateTime do
   end
 end
 
-defimpl Typst.Code, for: Date do
+defimpl AshTypst.Code, for: Date do
   def encode(%{year: year, month: month, day: day}, _context) do
     "datetime(year: #{year}, month: #{month}, day: #{day})"
   end
 end
 
-defimpl Typst.Code, for: Time do
+defimpl AshTypst.Code, for: Time do
   def encode(
         %{hour: hour, minute: minute, second: second},
         _context
@@ -159,15 +159,15 @@ defimpl Typst.Code, for: Time do
   end
 end
 
-defimpl Typst.Code, for: Integer do
+defimpl AshTypst.Code, for: Integer do
   def encode(integer, _context), do: "int(#{integer})"
 end
 
-defimpl Typst.Code, for: Float do
+defimpl AshTypst.Code, for: Float do
   def encode(float, _context), do: "float(#{float})"
 end
 
-defimpl Typst.Code, for: BitString do
+defimpl AshTypst.Code, for: BitString do
   def encode(string, _context) do
     escaped =
       string
@@ -181,16 +181,16 @@ defimpl Typst.Code, for: BitString do
   end
 end
 
-defimpl Typst.Code, for: Atom do
+defimpl AshTypst.Code, for: Atom do
   def encode(nil, _context), do: "none"
   def encode(true, _context), do: "true"
   def encode(false, _context), do: "false"
-  def encode(atom, context), do: atom |> Atom.to_string() |> Typst.Code.encode(context)
+  def encode(atom, context), do: atom |> Atom.to_string() |> AshTypst.Code.encode(context)
 end
 
 case Code.ensure_compiled(Decimal) do
   {:module, _} ->
-    defimpl Typst.Code, for: Decimal do
+    defimpl AshTypst.Code, for: Decimal do
       def encode(decimal, _context), do: "decimal(#{decimal})"
     end
 
@@ -200,12 +200,12 @@ end
 
 case Code.ensure_compiled(Ash) do
   {:module, _} ->
-    defimpl Typst.Code, for: Ash.NotLoaded do
+    defimpl AshTypst.Code, for: Ash.NotLoaded do
       def encode(_, _context), do: "none"
     end
 
-    defimpl Typst.Code, for: Ash.CiString do
-      def encode(%{string: string}, context), do: Typst.Code.encode(string, context)
+    defimpl AshTypst.Code, for: Ash.CiString do
+      def encode(%{string: string}, context), do: AshTypst.Code.encode(string, context)
     end
 
   _ ->

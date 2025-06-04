@@ -1,19 +1,19 @@
-defmodule Typst.MixProject do
+defmodule AshTypst.MixProject do
   use Mix.Project
 
   @version "0.0.1"
-  @source_url "https://github.com/frankdugan3/typst"
+  @source_url "https://github.com/frankdugan3/ash_typst"
 
   def project do
     [
-      app: :typst,
+      app: :ash_typst,
       version: @version,
       elixir: "~> 1.17",
       deps: deps(),
       description: "Precompiled NIFs and tooling to render Typst documents.",
       package: package(),
       docs: [
-        main: "Typst",
+        main: "AshTypst",
         source_url: @source_url,
         source_ref: "v#{@version}",
         extras: ["CHANGELOG.md"]
