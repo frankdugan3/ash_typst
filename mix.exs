@@ -19,9 +19,13 @@ defmodule AshTypst.MixProject do
         extras: ["CHANGELOG.md"]
       ],
       preferred_cli_env: [
-        "test.watch": :test,
-        docs: :docs
-      ]
+        check: :test,
+        credo: :test,
+        dialyzer: :test,
+        doctor: :test,
+        "deps.audit": :test
+      ],
+      aliases: aliases()
     ]
   end
 
@@ -33,9 +37,9 @@ defmodule AshTypst.MixProject do
       licenses: ["MIT"],
       files: [
         "lib",
-        "native/example/.cargo",
-        "native/example/src",
-        "native/example/Cargo*",
+        "native/typst_nif/.cargo",
+        "native/typst_nif/src",
+        "native/typst_nif/Cargo*",
         "checksum-*.exs",
         "mix.exs"
       ]
@@ -52,13 +56,30 @@ defmodule AshTypst.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:ex_check, "~> 0.14.0", only: :test, runtime: false},
+      {:credo, ">= 0.0.0", only: :test, runtime: false},
+      {:dialyxir, ">= 0.0.0", only: :test, runtime: false},
+      {:doctor, ">= 0.0.0", only: :test, runtime: false},
+      {:ex_doc, ">= 0.0.0", only: [:dev, :test], runtime: false},
+      {:gettext, ">= 0.0.0", only: :test, runtime: false},
+      {:mix_audit, ">= 0.0.0", only: :test, runtime: false},
       {:mix_test_watch, "~> 1.2", only: :test},
       {:tz, "~> 0.28", only: :test},
-      {:ex_doc, ">= 0.0.0", only: :docs},
       {:git_ops, "~> 2.7", only: :dev},
-      {:rustler, "~> 0.35"},
-      {:ash, "~> 3.0", optional: true},
+      {:rustler_precompiled, "~> 0.8"},
+      {:rustler, "~> 0.35", optional: true},
+      {:ash, "~> 3.0"},
       {:decimal, "~> 2.0", optional: true}
+    ]
+  end
+
+  defp aliases do
+    [
+      rules: "usage_rules.sync CLAUDE.md --all",
+      update: ["deps.update --all", "cmd --cd native/typst_nif cargo update --verbose"],
+      format: ["format --migrate", "cmd --cd native/typst_nif cargo fmt"],
+      outdated: ["hex.outdated", "cmd --cd native/typst_nif cargo update --locked --verbose"],
+      setup: ["deps.get", "cmd --cd native/typst_nif cargo fetch"]
     ]
   end
 end

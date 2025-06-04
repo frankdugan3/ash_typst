@@ -49,12 +49,15 @@ defprotocol AshTypst.Code do
   ```
 
   """
+  @spec encode(any(), map()) :: String.t()
   def encode(value, context \\ %{})
 end
 
 defimpl AshTypst.Code, for: Any do
+  @spec encode(any(), map()) :: String.t()
   def encode(%{} = map, _context) when map_size(map) == 0, do: "(:)"
 
+  @spec encode(struct(), map()) :: String.t()
   def encode(%{__struct__: module} = map, %{struct_keys: struct_keys} = context) do
     stripped =
       case struct_keys do
@@ -65,6 +68,7 @@ defimpl AshTypst.Code, for: Any do
     AshTypst.Code.encode(stripped, context)
   end
 
+  @spec encode(map(), map()) :: String.t()
   def encode(map, context) do
     stripped = auto_strip(map)
     AshTypst.Code.encode(stripped, context)
@@ -73,18 +77,20 @@ defimpl AshTypst.Code, for: Any do
   @struct_drop_keys [:__struct__]
   case Code.ensure_compiled(Ash) do
     {:module, _} ->
+      defp collect_loadable_keys(%{name: name, type: :attribute}, acc, map) do
+        if name in map.__metadata__.selected, do: [name | acc], else: acc
+      end
+
+      defp collect_loadable_keys(%{name: name}, acc, _map) do
+        [name | acc]
+      end
+
       defp auto_strip(%{__struct__: module} = map) do
         if Ash.Resource.Info.resource?(module) do
           loadable_keys =
             module
             |> Ash.Resource.Info.public_fields()
-            |> Enum.reduce([], fn
-              %{name: name, type: :attribute}, acc ->
-                if name in map.__metadata__.selected, do: [name | acc], else: acc
-
-              %{name: name}, acc ->
-                [name | acc]
-            end)
+            |> Enum.reduce([], &collect_loadable_keys(&1, &2, map))
 
           Map.take(map, [:calculations, :aggregates] ++ loadable_keys)
         else

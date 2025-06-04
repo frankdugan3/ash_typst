@@ -12,7 +12,6 @@ defmodule AshTypst do
   def stream_to_datafile!(stream, filepath, opts \\ []) do
     variable_name = opts[:variable_name] || "data"
     context = opts[:context] || []
-
     File.write!(filepath, "let #{variable_name} = (\n")
 
     stream
@@ -147,7 +146,7 @@ defmodule AshTypst do
       # => []  # Only custom fonts if any
 
   """
-  @spec font_families(FontOptions.t()) :: [String.t()]
+  @spec font_families(FontOptions.t()) :: {:ok, [String.t()]} | {:error, String.t()}
   def font_families(%FontOptions{} = opts \\ %FontOptions{}) do
     NIF.font_families(opts)
   end
