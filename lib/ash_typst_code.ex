@@ -1,6 +1,6 @@
 defprotocol AshTypst.Code do
   @moduledoc """
-  Functions to support Typst code syntax.
+  Protocol to support Typst code syntax.
   """
 
   @doc """
@@ -75,33 +75,28 @@ defimpl AshTypst.Code, for: Any do
   end
 
   @struct_drop_keys [:__struct__]
-  case Code.ensure_compiled(Ash) do
-    {:module, _} ->
-      defp collect_loadable_keys(%{name: name, type: :attribute}, acc, map) do
-        if name in map.__metadata__.selected, do: [name | acc], else: acc
-      end
 
-      defp collect_loadable_keys(%{name: name}, acc, _map) do
-        [name | acc]
-      end
+  defp auto_strip(%{__struct__: module} = map) do
+    if Ash.Resource.Info.resource?(module) do
+      strip_ash_resource(map)
+    else
+      Map.drop(map, @struct_drop_keys)
+    end
+  end
 
-      defp auto_strip(%{__struct__: module} = map) do
-        if Ash.Resource.Info.resource?(module) do
-          loadable_keys =
-            module
-            |> Ash.Resource.Info.public_fields()
-            |> Enum.reduce([], &collect_loadable_keys(&1, &2, map))
+  defp strip_ash_resource(map) do
+    loadable_keys =
+      map.__struct__
+      |> Ash.Resource.Info.public_fields()
+      |> Enum.reduce([], fn
+        %{name: name, type: :attribute}, acc ->
+          if name in map.__metadata__.selected, do: [name | acc], else: acc
 
-          Map.take(map, [:calculations, :aggregates] ++ loadable_keys)
-        else
-          Map.drop(map, @struct_drop_keys)
-        end
-      end
+        %{name: name}, acc ->
+          [name | acc]
+      end)
 
-    _ ->
-      defp auto_strip(%{__struct__: _} = map) do
-        Map.drop(map, @struct_drop_keys)
-      end
+    Map.take(map, [:calculations, :aggregates] ++ loadable_keys)
   end
 end
 
@@ -194,26 +189,14 @@ defimpl AshTypst.Code, for: Atom do
   def encode(atom, context), do: atom |> Atom.to_string() |> AshTypst.Code.encode(context)
 end
 
-case Code.ensure_compiled(Decimal) do
-  {:module, _} ->
-    defimpl AshTypst.Code, for: Decimal do
-      def encode(decimal, _context), do: "decimal(#{decimal})"
-    end
-
-  _ ->
-    :noop
+defimpl AshTypst.Code, for: Decimal do
+  def encode(decimal, _context), do: "decimal(#{decimal})"
 end
 
-case Code.ensure_compiled(Ash) do
-  {:module, _} ->
-    defimpl AshTypst.Code, for: Ash.NotLoaded do
-      def encode(_, _context), do: "none"
-    end
+defimpl AshTypst.Code, for: Ash.NotLoaded do
+  def encode(_, _context), do: "none"
+end
 
-    defimpl AshTypst.Code, for: Ash.CiString do
-      def encode(%{string: string}, context), do: AshTypst.Code.encode(string, context)
-    end
-
-  _ ->
-    :noop
+defimpl AshTypst.Code, for: Ash.CiString do
+  def encode(%{string: string}, context), do: AshTypst.Code.encode(string, context)
 end

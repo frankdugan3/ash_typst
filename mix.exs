@@ -65,11 +65,11 @@ defmodule AshTypst.MixProject do
       {:mix_audit, ">= 0.0.0", only: :test, runtime: false},
       {:mix_test_watch, "~> 1.2", only: :test},
       {:tz, "~> 0.28", only: :test},
-      {:git_ops, "~> 2.7", only: :dev},
-      {:rustler_precompiled, "~> 0.8"},
       {:rustler, "~> 0.35", optional: true},
+      {:git_ops, "~> 2.7", only: :dev},
       {:ash, "~> 3.0"},
-      {:decimal, "~> 2.0", optional: true}
+      {:decimal, "~> 2.0"},
+      {:rustler_precompiled, "~> 0.8"}
     ]
   end
 
