@@ -45,22 +45,19 @@ defmodule AshTypst do
   ## Examples
 
       AshTypst.preview("#heading[Hello World]")
-      # => {:ok, {svg_content, warnings}}
+      # => {:ok, {svg_content, diagnostics}}
 
       AshTypst.preview("#heading[Hello World]", %AshTypst.PreviewOptions{font_paths: ["/path/to/fonts"]})
-      # => {:ok, {svg_content, warnings}}
+      # => {:ok, {svg_content, diagnostics}}
 
       AshTypst.preview("#heading[Hello World]", %AshTypst.PreviewOptions{ignore_system_fonts: true})
-      # => {:ok, {svg_content, warnings}}
+      # => {:ok, {svg_content, diagnostics}}
 
   """
   @spec preview(String.t(), PreviewOptions.t()) ::
-          {:ok, {String.t(), String.t() | nil}} | {:error, String.t()}
+          {:ok, {String.t(), list()}} | {:error, map()}
   def preview(markup, %PreviewOptions{} = opts \\ %PreviewOptions{}) do
-    case NIF.preview(markup, opts) do
-      {:error, error} -> {:error, error}
-      {preview, warnings} -> {:ok, {preview, trim_warnings(warnings)}}
-    end
+    NIF.preview(markup, opts)
   end
 
   defmodule PDFOptions do
@@ -96,22 +93,19 @@ defmodule AshTypst do
   ## Examples
 
       AshTypst.export_pdf("#heading[Hello World]")
-      # => {:ok, {pdf_binary, warnings}}
+      # => {:ok, {pdf_binary, diagnostics}}
 
       AshTypst.export_pdf("#heading[Hello World]", %AshTypst.PDFOptions{pages: "1-5", pdf_standards: [:pdf_a_2b]})
-      # => {:ok, {pdf_binary, warnings}}
+      # => {:ok, {pdf_binary, diagnostics}}
 
       AshTypst.export_pdf("#heading[Hello World]", %AshTypst.PDFOptions{font_paths: ["/path/to/fonts"], ignore_system_fonts: true})
-      # => {:ok, {pdf_binary, warnings}}
+      # => {:ok, {pdf_binary, diagnostics}}
 
   """
   @spec export_pdf(String.t(), PDFOptions.t()) ::
-          {:ok, {String.t(), String.t() | nil}} | {:error, String.t()}
+          {:ok, {String.t(), list()}} | {:error, map()}
   def export_pdf(markup, %PDFOptions{} = opts \\ %PDFOptions{}) do
-    case NIF.export_pdf(markup, opts) do
-      {:error, error} -> {:error, error}
-      {pdf, warnings} -> {:ok, {pdf, trim_warnings(warnings)}}
-    end
+    NIF.export_pdf(markup, opts)
   end
 
   defmodule FontOptions do
@@ -149,12 +143,5 @@ defmodule AshTypst do
   @spec font_families(FontOptions.t()) :: {:ok, [String.t()]} | {:error, String.t()}
   def font_families(%FontOptions{} = opts \\ %FontOptions{}) do
     NIF.font_families(opts)
-  end
-
-  defp trim_warnings(warnings) do
-    case String.trim(warnings) do
-      "" -> nil
-      trimmed -> trimmed
-    end
   end
 end

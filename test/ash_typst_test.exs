@@ -7,19 +7,19 @@ defmodule AshTypstTest do
 
   describe "preview/2" do
     test "generates SVG preview with default options" do
-      assert {:ok, {svg, warnings}} = AshTypst.preview(@test_markup)
+      assert {:ok, {svg, diagnostics}} = AshTypst.preview(@test_markup)
       assert is_binary(svg)
       assert String.contains?(svg, "<svg")
       # SVG content splits text into individual characters via <use> elements
       # Just verify it contains SVG structure and substantial content
       assert String.length(svg) > 1000
       assert String.contains?(svg, "class=\"typst-text\"")
-      assert is_nil(warnings) or is_binary(warnings)
+      assert is_list(diagnostics)
     end
 
     test "generates SVG preview with font paths" do
       opts = %AshTypst.PreviewOptions{font_paths: ["/usr/share/fonts"]}
-      assert {:ok, {svg, _warnings}} = AshTypst.preview(@test_markup, opts)
+      assert {:ok, {svg, _diagnostics}} = AshTypst.preview(@test_markup, opts)
       assert is_binary(svg)
       assert String.contains?(svg, "<svg")
     end
@@ -27,55 +27,56 @@ defmodule AshTypstTest do
     @tag :skip_until_rust_fix
     test "generates SVG preview ignoring system fonts" do
       opts = %AshTypst.PreviewOptions{ignore_system_fonts: true}
-      assert {:ok, {svg, _warnings}} = AshTypst.preview(@test_markup, opts)
+      assert {:ok, {svg, _diagnostics}} = AshTypst.preview(@test_markup, opts)
       assert is_binary(svg)
       assert String.contains?(svg, "<svg")
     end
 
     test "handles invalid markup gracefully" do
-      assert {:error, error} = AshTypst.preview("#let invalid = ")
-      assert is_binary(error)
+      assert {:error, %{diagnostics: diagnostics}} = AshTypst.preview("#let invalid = ")
+      assert is_list(diagnostics)
+      assert length(diagnostics) > 0
     end
   end
 
   describe "export_pdf/2" do
     test "exports PDF with default options" do
-      assert {:ok, {pdf, warnings}} = AshTypst.export_pdf(@test_markup)
+      assert {:ok, {pdf, diagnostics}} = AshTypst.export_pdf(@test_markup)
       assert is_binary(pdf)
       # PDF should be substantial
       assert String.length(pdf) > 1000
-      assert is_nil(warnings) or is_binary(warnings)
+      assert is_list(diagnostics)
     end
 
     test "exports PDF with PDF standards" do
       opts = %AshTypst.PDFOptions{pdf_standards: [:pdf_a_2b]}
-      assert {:ok, {pdf, _warnings}} = AshTypst.export_pdf(@test_markup, opts)
+      assert {:ok, {pdf, _diagnostics}} = AshTypst.export_pdf(@test_markup, opts)
       assert is_binary(pdf)
       assert String.length(pdf) > 1000
     end
 
     test "exports PDF with multiple standards" do
       opts = %AshTypst.PDFOptions{pdf_standards: [:pdf_1_7, :pdf_a_2b]}
-      assert {:ok, {pdf, _warnings}} = AshTypst.export_pdf(@test_markup, opts)
+      assert {:ok, {pdf, _diagnostics}} = AshTypst.export_pdf(@test_markup, opts)
       assert is_binary(pdf)
     end
 
     test "exports PDF with document ID" do
       opts = %AshTypst.PDFOptions{document_id: "test-document"}
-      assert {:ok, {pdf, _warnings}} = AshTypst.export_pdf(@test_markup, opts)
+      assert {:ok, {pdf, _diagnostics}} = AshTypst.export_pdf(@test_markup, opts)
       assert is_binary(pdf)
     end
 
     test "exports PDF with font paths" do
       opts = %AshTypst.PDFOptions{font_paths: ["/usr/share/fonts"]}
-      assert {:ok, {pdf, _warnings}} = AshTypst.export_pdf(@test_markup, opts)
+      assert {:ok, {pdf, _diagnostics}} = AshTypst.export_pdf(@test_markup, opts)
       assert is_binary(pdf)
     end
 
     @tag :skip_until_rust_fix
     test "exports PDF ignoring system fonts" do
       opts = %AshTypst.PDFOptions{ignore_system_fonts: true}
-      assert {:ok, {pdf, _warnings}} = AshTypst.export_pdf(@test_markup, opts)
+      assert {:ok, {pdf, _diagnostics}} = AshTypst.export_pdf(@test_markup, opts)
       assert is_binary(pdf)
     end
 
@@ -87,13 +88,14 @@ defmodule AshTypstTest do
         ignore_system_fonts: false
       }
 
-      assert {:ok, {pdf, _warnings}} = AshTypst.export_pdf(@test_markup, opts)
+      assert {:ok, {pdf, _diagnostics}} = AshTypst.export_pdf(@test_markup, opts)
       assert is_binary(pdf)
     end
 
     test "handles invalid markup gracefully" do
-      assert {:error, error} = AshTypst.export_pdf("#let invalid = ")
-      assert is_binary(error)
+      assert {:error, %{diagnostics: diagnostics}} = AshTypst.export_pdf("#let invalid = ")
+      assert is_list(diagnostics)
+      assert length(diagnostics) > 0
     end
   end
 

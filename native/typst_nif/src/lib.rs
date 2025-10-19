@@ -1,14 +1,14 @@
 use chrono::{DateTime, Datelike, FixedOffset, Local, Utc};
 use ecow::EcoVec;
 use parking_lot::Mutex;
-use rustler::{Atom, Decoder, Encoder, Env, Error, NifResult, NifStruct, Term};
+use rustler::{Atom, Decoder, Encoder, Env, Error, NifStruct, Term};
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use std::sync::OnceLock;
 use std::{fs, mem};
-use typst::diag::{FileError, FileResult, SourceDiagnostic};
+use typst::diag::{FileError, FileResult, Severity, SourceDiagnostic};
 use typst::foundations::Smart;
 use typst::foundations::{Bytes, Datetime};
 use typst::layout::PagedDocument;
@@ -47,6 +47,106 @@ pub struct PdfOptionsNif {
 pub struct FontOptionsNif {
     pub font_paths: Vec<String>,
     pub ignore_system_fonts: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SeverityNif {
+    Error,
+    Warning,
+}
+
+impl Decoder<'_> for SeverityNif {
+    fn decode(term: Term) -> Result<Self, rustler::Error> {
+        let atom: Atom = term.decode()?;
+
+        if atom == error() {
+            Ok(SeverityNif::Error)
+        } else if atom == warning() {
+            Ok(SeverityNif::Warning)
+        } else {
+            Err(rustler::Error::BadArg)
+        }
+    }
+}
+
+impl Encoder for SeverityNif {
+    fn encode<'a>(&self, env: Env<'a>) -> Term<'a> {
+        match self {
+            SeverityNif::Error => error().encode(env),
+            SeverityNif::Warning => warning().encode(env),
+        }
+    }
+}
+
+impl From<Severity> for SeverityNif {
+    fn from(severity: Severity) -> Self {
+        match severity {
+            Severity::Error => SeverityNif::Error,
+            Severity::Warning => SeverityNif::Warning,
+        }
+    }
+}
+
+#[derive(NifStruct)]
+#[module = "AshTypst.Diagnostic"]
+pub struct DiagnosticNif {
+    pub severity: SeverityNif,
+    pub message: String,
+    pub span: Option<SpanNif>,
+    pub trace: Vec<TraceItemNif>,
+    pub hints: Vec<String>,
+}
+
+#[derive(NifStruct)]
+#[module = "AshTypst.Span"]
+pub struct SpanNif {
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(NifStruct)]
+#[module = "AshTypst.TraceItem"]
+pub struct TraceItemNif {
+    pub span: Option<SpanNif>,
+    pub message: String,
+}
+
+#[derive(NifStruct)]
+#[module = "AshTypst.CompileError"]
+pub struct CompileErrorNif {
+    pub diagnostics: Vec<DiagnosticNif>,
+}
+
+impl From<&SourceDiagnostic> for DiagnosticNif {
+    fn from(diagnostic: &SourceDiagnostic) -> Self {
+        Self {
+            severity: diagnostic.severity.into(),
+            message: diagnostic.message.to_string(),
+            span: diagnostic.span.range().map(|range| SpanNif {
+                start: range.start,
+                end: range.end,
+            }),
+            trace: diagnostic
+                .trace
+                .iter()
+                .map(|item| {
+                    let span = item.span.range().map(|range| SpanNif {
+                        start: range.start,
+                        end: range.end,
+                    });
+                    TraceItemNif {
+                        span,
+                        message: item.v.to_string(),
+                    }
+                })
+                .collect(),
+            hints: diagnostic
+                .hints
+                .iter()
+                .map(|hint| hint.to_string())
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,12 +254,10 @@ pub struct SystemWorld {
 }
 
 impl SystemWorld {
-    /// Create a new system world.
     pub fn new(root: PathBuf, markup: String) -> Self {
         Self::with_font_options(root, markup, Vec::<String>::new(), false)
     }
 
-    /// Create a new system world with custom font paths.
     pub fn with_font_paths<I, P>(root: PathBuf, markup: String, font_paths: I) -> Self
     where
         I: IntoIterator<Item = P>,
@@ -168,7 +266,6 @@ impl SystemWorld {
         Self::with_font_options(root, markup, font_paths, false)
     }
 
-    /// Create a new system world with font options.
     pub fn with_font_options<I, P>(
         root: PathBuf,
         markup: String,
@@ -211,17 +308,14 @@ impl SystemWorld {
         }
     }
 
-    /// The id of the main source file.
     pub fn main(&self) -> FileId {
         self.main
     }
 
-    /// The root relative to which absolute paths are resolved.
     pub fn root(&self) -> &Path {
         &self.root
     }
 
-    /// Return all paths the last compilation depended on.
     pub fn dependencies(&mut self) -> impl Iterator<Item = PathBuf> + '_ {
         self.slots
             .get_mut()
@@ -230,7 +324,6 @@ impl SystemWorld {
             .filter_map(|slot| system_path(&self.root, slot.id, &self.package_storage).ok())
     }
 
-    /// Reset the compilation state in preparation of a new compilation.
     pub fn reset(&mut self) {
         for slot in self.slots.get_mut().values_mut() {
             slot.reset();
@@ -240,38 +333,47 @@ impl SystemWorld {
         }
     }
 
-    /// Lookup a source file by id.
-    #[track_caller]
     pub fn lookup(&self, id: FileId) -> Source {
         self.source(id)
             .expect("file id does not point to any source file")
     }
-    pub fn preview(&mut self) -> NifResult<(String, String)> {
+    pub fn preview(&mut self) -> Result<(String, Vec<DiagnosticNif>), CompileErrorNif> {
         let result = typst::compile::<PagedDocument>(self);
         match result.output {
             Ok(document) => Ok((
                 typst_svg::svg(&document.pages[0]),
-                diagnostics_to_string(result.warnings),
+                diagnostics_to_vec(result.warnings),
             )),
-            Err(e) => Err(diagnostics_to_rustler_error(e)),
+            Err(e) => Err(CompileErrorNif {
+                diagnostics: diagnostics_to_vec(e),
+            }),
         }
     }
 
-    pub fn export_pdf(&mut self, pdf_opts: &PdfOptionsNif) -> NifResult<(String, String)> {
+    pub fn export_pdf(
+        &mut self,
+        pdf_opts: &PdfOptionsNif,
+    ) -> Result<(String, Vec<DiagnosticNif>), CompileErrorNif> {
         let result = typst::compile::<PagedDocument>(self);
         match result.output {
             Ok(document) => {
-                let opts = pdf_opts.to_pdf_options()?;
+                let opts = pdf_opts.to_pdf_options().map_err(|_| CompileErrorNif {
+                    diagnostics: vec![],
+                })?;
                 match typst_pdf::pdf(&document, &opts) {
                     Ok(pdf_bytes) => {
                         // PDF bytes are not valid UTF-8, so we use Latin-1 encoding for binary data
                         let pdf_string = pdf_bytes.iter().map(|&b| b as char).collect::<String>();
-                        Ok((pdf_string, diagnostics_to_string(result.warnings)))
+                        Ok((pdf_string, diagnostics_to_vec(result.warnings)))
                     }
-                    Err(e) => Err(diagnostics_to_rustler_error(e)),
+                    Err(e) => Err(CompileErrorNif {
+                        diagnostics: diagnostics_to_vec(e),
+                    }),
                 }
             }
-            Err(e) => Err(diagnostics_to_rustler_error(e)),
+            Err(e) => Err(CompileErrorNif {
+                diagnostics: diagnostics_to_vec(e),
+            }),
         }
     }
 }
@@ -312,7 +414,6 @@ impl World for SystemWorld {
             Now::System(time) => time.get_or_init(Utc::now),
         };
 
-        // The time with the specified UTC offset, or within the local time zone.
         let with_offset = match offset {
             None => now.with_timezone(&Local).fixed_offset(),
             Some(hours) => {
@@ -330,7 +431,6 @@ impl World for SystemWorld {
 }
 
 impl SystemWorld {
-    /// Access the canonical slot for the given file id.
     fn slot<F, T>(&self, id: FileId, f: F) -> T
     where
         F: FnOnce(&mut FileSlot) -> T,
@@ -340,19 +440,13 @@ impl SystemWorld {
     }
 }
 
-/// Holds the processed data for a file ID.
-/// Both fields can be populated if the file is both imported and read().
 struct FileSlot {
-    /// The slot's file id.
     id: FileId,
-    /// The lazily loaded and incrementally updated source file.
     source: SlotCell<Source>,
-    /// The lazily loaded raw byte buffer.
     file: SlotCell<Bytes>,
 }
 
 impl FileSlot {
-    /// Create a new file slot.
     fn new(id: FileId) -> Self {
         Self {
             id,
@@ -361,19 +455,15 @@ impl FileSlot {
         }
     }
 
-    /// Whether the file was accessed in the ongoing compilation.
     fn accessed(&self) -> bool {
         self.source.accessed() || self.file.accessed()
     }
 
-    /// Marks the file as not yet accessed in preparation of the next
-    /// compilation.
     fn reset(&mut self) {
         self.source.reset();
         self.file.reset();
     }
 
-    /// Retrieve the source for this file.
     fn source(
         &mut self,
         project_root: &Path,
@@ -399,7 +489,6 @@ impl FileSlot {
         )
     }
 
-    /// Retrieve the file's bytes.
     fn file(&mut self, project_root: &Path, package_storage: &PackageStorage) -> FileResult<Bytes> {
         self.file.get_or_init(
             || read(self.id, project_root, package_storage),
@@ -408,18 +497,13 @@ impl FileSlot {
     }
 }
 
-/// Lazily processes data for a file.
 struct SlotCell<T> {
-    /// The processed data.
     data: Option<FileResult<T>>,
-    /// A hash of the raw file contents / access error.
     fingerprint: u128,
-    /// Whether the slot has been accessed in the current compilation.
     accessed: bool,
 }
 
 impl<T: Clone> SlotCell<T> {
-    /// Creates a new, empty cell.
     fn new() -> Self {
         Self {
             data: None,
@@ -428,35 +512,28 @@ impl<T: Clone> SlotCell<T> {
         }
     }
 
-    /// Whether the cell was accessed in the ongoing compilation.
     fn accessed(&self) -> bool {
         self.accessed
     }
 
-    /// Marks the cell as not yet accessed in preparation of the next
-    /// compilation.
     fn reset(&mut self) {
         self.accessed = false;
     }
 
-    /// Gets the contents of the cell or initialize them.
     fn get_or_init(
         &mut self,
         load: impl FnOnce() -> FileResult<Vec<u8>>,
         f: impl FnOnce(Vec<u8>, Option<T>) -> FileResult<T>,
     ) -> FileResult<T> {
-        // If we accessed the file already in this compilation, retrieve it.
         if mem::replace(&mut self.accessed, true) {
             if let Some(data) = &self.data {
                 return data.clone();
             }
         }
 
-        // Read and hash the file.
         let result = timed!("loading file", load());
         let fingerprint = timed!("hashing file", typst::utils::hash128(&result));
 
-        // If the file contents didn't change, yield the old processed data.
         if mem::replace(&mut self.fingerprint, fingerprint) == fingerprint {
             if let Some(data) = &self.data {
                 return data.clone();
@@ -471,22 +548,12 @@ impl<T: Clone> SlotCell<T> {
     }
 }
 
-/// A progress reporter for package downloads that currently does nothing.
-/// TODO: Consider implementing actual progress reporting for better user experience.
 pub struct SilentDownloadProgress<T>(pub T);
 
 impl<T: Display> Progress for SilentDownloadProgress<T> {
-    fn print_start(&mut self) {
-        // Silent implementation - no output
-    }
-
-    fn print_progress(&mut self, _state: &DownloadState) {
-        // Silent implementation - no output
-    }
-
-    fn print_finish(&mut self, _state: &DownloadState) {
-        // Silent implementation - no output
-    }
+    fn print_start(&mut self) {}
+    fn print_progress(&mut self, _state: &DownloadState) {}
+    fn print_finish(&mut self, _state: &DownloadState) {}
 }
 
 fn system_path(
@@ -501,8 +568,6 @@ fn system_path(
         root = &buf;
     }
 
-    // Join the path to the root. If it tries to escape, deny
-    // access. Note: It can still escape via symlinks.
     id.vpath().resolve(root).ok_or(FileError::AccessDenied)
 }
 
@@ -519,49 +584,27 @@ fn read_from_disk(path: &Path) -> FileResult<Vec<u8>> {
     }
 }
 
-/// Decode UTF-8 with an optional BOM.
 fn decode_utf8(buf: &[u8]) -> FileResult<&str> {
-    // Remove UTF-8 BOM.
     Ok(std::str::from_utf8(
         buf.strip_prefix(b"\xef\xbb\xbf").unwrap_or(buf),
     )?)
 }
 
 enum Now {
-    /// The date and time if the environment `SOURCE_DATE_EPOCH` is set.
-    /// Used for reproducible builds.
     #[allow(dead_code)]
     Fixed(DateTime<Utc>),
-    /// The current date and time if the time is not externally fixed.
     System(OnceLock<DateTime<Utc>>),
 }
 
-pub fn diagnostics_to_string(diagnostics: EcoVec<SourceDiagnostic>) -> String {
-    diagnostics
-        .iter()
-        .map(format_diagnostic)
-        .collect::<Vec<_>>()
-        .join("\n\n")
-}
-
-pub fn diagnostics_to_rustler_error(diagnostics: EcoVec<SourceDiagnostic>) -> Error {
-    Error::Term(Box::new(diagnostics_to_string(diagnostics)))
-}
-
-fn format_diagnostic(diagnostic: &SourceDiagnostic) -> String {
-    let severity = format!("{:?}", diagnostic.severity);
-    let span = format!("{:?}", diagnostic.span);
-    let trace = format!("{:?}", diagnostic.trace);
-    let hints = format!("{:?}", diagnostic.hints);
-
-    format!(
-        "Severity: {severity}\nSpan: {span}\nMessage: {}\nTrace: {trace}\nHints: {hints}",
-        diagnostic.message
-    )
+pub fn diagnostics_to_vec(diagnostics: EcoVec<SourceDiagnostic>) -> Vec<DiagnosticNif> {
+    diagnostics.iter().map(DiagnosticNif::from).collect()
 }
 
 #[rustler::nif(schedule = "DirtyCpu")]
-fn preview(markup: String, opts: PreviewOptionsNif) -> NifResult<(String, String)> {
+fn preview(
+    markup: String,
+    opts: PreviewOptionsNif,
+) -> Result<(String, Vec<DiagnosticNif>), CompileErrorNif> {
     let font_paths = opts.get_font_paths().clone();
     let mut world = SystemWorld::with_font_options(
         ".".into(),
@@ -573,7 +616,10 @@ fn preview(markup: String, opts: PreviewOptionsNif) -> NifResult<(String, String
 }
 
 #[rustler::nif(schedule = "DirtyCpu")]
-fn export_pdf(markup: String, opts: PdfOptionsNif) -> NifResult<(String, String)> {
+fn export_pdf(
+    markup: String,
+    opts: PdfOptionsNif,
+) -> Result<(String, Vec<DiagnosticNif>), CompileErrorNif> {
     let font_paths = opts.get_font_paths().clone();
     let mut world = SystemWorld::with_font_options(
         ".".into(),
@@ -621,7 +667,9 @@ fn font_families(opts: FontOptionsNif) -> Vec<String> {
 rustler::atoms! {
     pdf_1_7,
     pdf_a_2b,
-    pdf_a_3b
+    pdf_a_3b,
+    error,
+    warning
 }
 
 rustler::init!("Elixir.AshTypst.NIF");

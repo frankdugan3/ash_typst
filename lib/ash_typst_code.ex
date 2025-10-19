@@ -42,9 +42,12 @@ defprotocol AshTypst.Code do
 
   Context must be passed through. This allows for things like dates to be formatted according to a given timezone, etc.
 
-  If `timezone` is specified in the context, supported types will be automatically shifted to that zone. Ensure you install and configure the timezone database in `config.exs`:
+  If `timezone` is specified in the context, supported types will be automatically shifted to that zone. Ensure you install and configure your choice of timezone database in `config.exs`:
 
   ```elixir
+  config :elixir, :time_zone_database, Tzdata.TimeZoneDatabase
+  config :elixir, :time_zone_database, TimeZoneInfo.TimeZoneDatabase
+  config :elixir, :time_zone_database, Zoneinfo.TimeZoneDatabase
   config :elixir, :time_zone_database, Tz.TimeZoneDatabase
   ```
 

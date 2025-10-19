@@ -27,13 +27,13 @@ defmodule AshTypst.NIF do
   @doc """
   Generate a preview of a Typst document.
   """
-  @spec preview(String.t(), map()) :: {:ok, binary()} | {:error, String.t()}
+  @spec preview(String.t(), map()) :: {:ok, {String.t(), list()}} | {:error, map()}
   def preview(_typst_document, _opts), do: :erlang.nif_error(:not_loaded)
 
   @doc """
   Export a Typst document to PDF format.
   """
-  @spec export_pdf(String.t(), map()) :: {:ok, binary()} | {:error, String.t()}
+  @spec export_pdf(String.t(), map()) :: {:ok, {String.t(), list()}} | {:error, map()}
   def export_pdf(_typst_document, _opts), do: :erlang.nif_error(:not_loaded)
 
   @doc """
