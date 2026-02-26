@@ -12,29 +12,44 @@ defmodule AshTypst.MixProject do
       deps: deps(),
       description: "Precompiled NIFs and tooling to render Typst documents.",
       package: package(),
-      docs: [
-        main: "readme",
-        source_url: @source_url,
-        source_ref: "v#{@version}",
-        extras: ["README.md", "CHANGELOG.md"],
-        before_closing_head_tag: &before_closing_head_tag/1,
-        before_closing_body_tag: &before_closing_body_tag/1,
-        groups_for_modules: [
-          Core: [AshTypst, AshTypst.Context],
-          "Data Encoding": [AshTypst.Code],
-          Structs: [
-            AshTypst.Context.Options,
-            AshTypst.PDFOptions,
-            AshTypst.CompileResult,
-            AshTypst.CompileError,
-            AshTypst.Diagnostic,
-            AshTypst.Span,
-            AshTypst.TraceItem,
-            AshTypst.FontOptions
-          ]
-        ]
-      ],
+      docs: &docs/0,
       aliases: aliases()
+    ]
+  end
+
+  defp docs do
+    [
+      main: "readme",
+      source_url: @source_url,
+      source_ref: "v#{@version}",
+      extras: [
+        {"README.md", title: "Home"},
+        "CHANGELOG.md",
+        {"documentation/dsls/DSL-AshTypst.Resource.md",
+         search_data: Spark.Docs.search_data_for(AshTypst.Resource)},
+        "documentation/topics/security/sensitive-data.md"
+      ],
+      groups_for_extras: [
+        Topics: ~r"documentation/topics",
+        Reference: ~r"documentation/dsls",
+        "About AshTypst": ["CHANGELOG.md"]
+      ],
+      before_closing_head_tag: &before_closing_head_tag/1,
+      before_closing_body_tag: &before_closing_body_tag/1,
+      groups_for_modules: [
+        Core: [AshTypst, AshTypst.Context],
+        "Data Encoding": [AshTypst.Code],
+        Structs: [
+          AshTypst.Context.Options,
+          AshTypst.PDFOptions,
+          AshTypst.CompileResult,
+          AshTypst.CompileError,
+          AshTypst.Diagnostic,
+          AshTypst.Span,
+          AshTypst.TraceItem,
+          AshTypst.FontOptions
+        ]
+      ]
     ]
   end
 
@@ -143,9 +158,14 @@ defmodule AshTypst.MixProject do
   defp aliases do
     [
       update: ["deps.update --all", "cmd --cd native/typst_nif cargo update --verbose"],
-      format: ["format --migrate", "cmd --cd native/typst_nif cargo fmt"],
+      format: ["spark.formatter --extensions AshTypst.Resource", "cmd --cd native/typst_nif cargo fmt"],
       outdated: ["hex.outdated", "cmd --cd native/typst_nif cargo update --locked --verbose"],
-      setup: ["deps.get", "cmd --cd native/typst_nif cargo fetch"]
+      setup: ["deps.get", "cmd --cd native/typst_nif cargo fetch"],
+      docs: [
+        "spark.cheat_sheets --extensions AshTypst.Resource",
+        "docs",
+        "spark.replace_doc_links"
+      ]
     ]
   end
 end

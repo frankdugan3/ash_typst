@@ -21,6 +21,7 @@ fonts and compiled state in memory for fast, iterative rendering.
 - **Rich diagnostics** — compile errors include line/column numbers
 - **Data encoding** — the `AshTypst.Code` protocol converts Elixir types (maps, lists, dates, decimals, Ash resources) to Typst syntax
 - **Timezone-aware encoding** — dates and times are automatically shifted to a configured timezone when encoding to Typst
+- **Ash Resource Extension** - define template-rendering actions inside your resources via DSL
 
 ## Installation
 
@@ -104,6 +105,68 @@ The `AshTypst.Code` protocol converts Elixir values into Typst source syntax:
 | Ash resource                                   | `dictionary` of public fields |
 
 Implement `AshTypst.Code` for your own structs to control how they serialize.
+
+## Ash Resource Extension
+
+`AshTypst.Resource` is a Spark DSL extension that lets you declare Typst templates
+and render actions directly on your Ash resources. Each render action becomes a
+standard Ash generic action that returns an `AshTypst.Document` struct.
+
+```elixir
+defmodule MyApp.Invoice do
+  use Ash.Resource,
+    domain: MyApp.Domain,
+    extensions: [AshTypst.Resource]
+
+  typst do
+    root "priv/typst"
+
+    template :invoice do
+      source "invoice.typ"
+      inputs %{"company" => "Acme Corp"}
+    end
+
+    template :receipt do
+      # ~TYPST sigil is auto-imported inside template blocks
+      markup ~TYPST"""
+      #import "data.typ": record, args
+      = Receipt \#args.receipt_number
+      *Customer:* \#record.name
+      """
+    end
+
+    render :generate_pdf do
+      template :invoice
+      format :pdf
+
+      argument :invoice_id, :string, allow_nil?: false
+
+      read :one do
+        filter expr(id == ^arg(:invoice_id))
+        load [:line_items, :customer]
+      end
+
+      pdf_options do
+        pdf_standards [:pdf_a_2b]
+      end
+    end
+  end
+end
+```
+
+Call the action like any other Ash generic action:
+
+```elixir
+input = Ash.ActionInput.for_action(MyApp.Invoice, :generate_pdf, %{invoice_id: "123"})
+{:ok, %AshTypst.Document{format: :pdf, data: pdf_binary}} = Ash.run_action(input)
+```
+
+Data is injected into a virtual file (`data.typ` by default) that your template can
+`#import`. Depending on the read cardinality, your template receives `record` (single),
+`records` (list), and/or `args` (action arguments).
+
+For the complete DSL reference, see the
+[AshTypst.Resource DSL cheatsheet](https://hexdocs.pm/ash_typst/dsl-AshTypst.Resource.html).
 
 ## Live editing
 

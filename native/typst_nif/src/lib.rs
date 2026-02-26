@@ -17,7 +17,7 @@ use typst::layout::PagedDocument;
 use typst::syntax::{FileId, Source, VirtualPath};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
-use typst::{Library, LibraryExt, World};
+use typst::{Feature, Features, Library, LibraryExt, World};
 use typst_html::HtmlDocument;
 use typst_kit::download::{DownloadState, Downloader, Progress};
 use typst_kit::fonts::{FontSlot, Fonts};
@@ -235,7 +235,11 @@ impl SystemWorld {
             root,
             main: *MARKUP_ID,
             markup: String::new(),
-            library: LazyHash::new(Library::builder().build()),
+            library: LazyHash::new(
+                Library::builder()
+                    .with_features(Features::from_iter([Feature::Html]))
+                    .build(),
+            ),
             book: LazyHash::new(fonts.book),
             fonts: fonts.fonts,
             slots: Mutex::new(HashMap::new()),
@@ -263,7 +267,12 @@ impl SystemWorld {
                 Value::Str(Str::from(value.as_str())),
             );
         }
-        self.library = LazyHash::new(Library::builder().with_inputs(dict).build());
+        self.library = LazyHash::new(
+            Library::builder()
+                .with_inputs(dict)
+                .with_features(Features::from_iter([Feature::Html]))
+                .build(),
+        );
     }
 }
 

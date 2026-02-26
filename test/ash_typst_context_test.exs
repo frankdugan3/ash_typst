@@ -282,24 +282,17 @@ defmodule AshTypst.ContextTest do
       {:ok, ctx} = Context.new()
       Context.set_markup(ctx, "= Hello HTML")
 
-      case Context.export_html(ctx) do
-        {:ok, html} ->
-          assert is_binary(html)
-          assert String.contains?(html, "<!DOCTYPE html>") or String.contains?(html, "<html")
-
-        {:error, %AshTypst.CompileError{}} ->
-          :ok
-      end
+      assert {:ok, html} = Context.export_html(ctx)
+      assert is_binary(html)
+      assert String.contains?(html, "<!DOCTYPE html>") or String.contains?(html, "<html")
     end
 
     test "works independently of compile" do
       {:ok, ctx} = Context.new()
       Context.set_markup(ctx, "= No prior compile needed")
 
-      case Context.export_html(ctx) do
-        {:ok, html} -> assert is_binary(html)
-        {:error, _} -> :ok
-      end
+      assert {:ok, html} = Context.export_html(ctx)
+      assert is_binary(html)
     end
   end
 end
