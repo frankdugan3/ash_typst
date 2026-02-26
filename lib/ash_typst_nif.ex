@@ -1,10 +1,5 @@
 defmodule AshTypst.NIF do
-  @moduledoc """
-  Native interface functions for the Typst library.
-
-  This module provides low-level NIF functions for interacting with the Rust Typst library.
-  These functions are not intended for direct use - use the higher-level `AshTypst` module instead.
-  """
+  @moduledoc false
 
   use RustlerPrecompiled,
     otp_app: :ash_typst,
@@ -12,7 +7,7 @@ defmodule AshTypst.NIF do
     base_url:
       "https://github.com/frankdugan3/ash_typst/releases/download/v#{Mix.Project.config()[:version]}",
     version: Mix.Project.config()[:version],
-    nif_versions: ["2.14", "2.15", "2.16", "2.17"],
+    nif_versions: ["2.15", "2.16", "2.17"],
     targets: ~w(
       aarch64-apple-darwin
       aarch64-unknown-linux-gnu
@@ -24,21 +19,17 @@ defmodule AshTypst.NIF do
       x86_64-unknown-linux-musl
     )
 
-  @doc """
-  Generate a preview of a Typst document.
-  """
-  @spec preview(String.t(), map()) :: {:ok, {String.t(), list()}} | {:error, map()}
-  def preview(_typst_document, _opts), do: :erlang.nif_error(:not_loaded)
-
-  @doc """
-  Export a Typst document to PDF format.
-  """
-  @spec export_pdf(String.t(), map()) :: {:ok, {String.t(), list()}} | {:error, map()}
-  def export_pdf(_typst_document, _opts), do: :erlang.nif_error(:not_loaded)
-
-  @doc """
-  Get available font families.
-  """
-  @spec font_families(map()) :: {:ok, [String.t()]} | {:error, String.t()}
+  def context_new(_opts), do: :erlang.nif_error(:not_loaded)
+  def context_set_markup(_ctx, _markup), do: :erlang.nif_error(:not_loaded)
+  def context_compile(_ctx), do: :erlang.nif_error(:not_loaded)
+  def context_render_svg(_ctx, _page), do: :erlang.nif_error(:not_loaded)
+  def context_export_pdf(_ctx, _opts), do: :erlang.nif_error(:not_loaded)
+  def context_font_families(_ctx), do: :erlang.nif_error(:not_loaded)
+  def context_set_virtual_file(_ctx, _path, _content), do: :erlang.nif_error(:not_loaded)
+  def context_append_virtual_file(_ctx, _path, _chunk), do: :erlang.nif_error(:not_loaded)
+  def context_clear_virtual_file(_ctx, _path), do: :erlang.nif_error(:not_loaded)
+  def context_set_input(_ctx, _key, _value), do: :erlang.nif_error(:not_loaded)
+  def context_set_inputs(_ctx, _inputs), do: :erlang.nif_error(:not_loaded)
+  def context_export_html(_ctx), do: :erlang.nif_error(:not_loaded)
   def font_families(_opts), do: :erlang.nif_error(:not_loaded)
 end

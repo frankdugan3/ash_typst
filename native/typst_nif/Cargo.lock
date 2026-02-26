@@ -2902,6 +2902,7 @@ dependencies = [
  "parking_lot",
  "rustler",
  "typst",
+ "typst-html",
  "typst-kit",
  "typst-pdf",
  "typst-svg",

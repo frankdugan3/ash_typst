@@ -27,8 +27,8 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache dependencies
-        uses: actions/cache@v3
+      - name: Cache Elixir dependencies
+        uses: actions/cache@v4
         with:
           path: |
             deps
@@ -37,21 +37,15 @@ jobs:
           restore-keys: ${{ runner.os }}-mix-
 
       - name: Cache Rust dependencies
-        uses: actions/cache@v3
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            native/typst_nif/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+          workspaces: native/typst_nif
 
       - name: Install dependencies
         run: mix deps.get
 
-      - name: Download precompiled NIFs or build from source
-        run: |
-          mix rustler_precompiled.download AshTypst.NIF --ignore-unavailable || mix rustler.build
+      - name: Compile
+        run: mix compile --warnings-as-errors
 
       - name: Check formatting
         run: mix format --check-formatted
@@ -61,4 +55,3 @@ jobs:
 
       - name: Run Credo
         run: mix credo --strict
-        continue-on-error: true

@@ -8,15 +8,31 @@ defmodule AshTypst.MixProject do
     [
       app: :ash_typst,
       version: @version,
-      elixir: "~> 1.17",
+      elixir: "~> 1.19",
       deps: deps(),
       description: "Precompiled NIFs and tooling to render Typst documents.",
       package: package(),
       docs: [
-        main: "AshTypst",
+        main: "readme",
         source_url: @source_url,
         source_ref: "v#{@version}",
-        extras: ["CHANGELOG.md"]
+        extras: ["README.md", "CHANGELOG.md"],
+        before_closing_head_tag: &before_closing_head_tag/1,
+        before_closing_body_tag: &before_closing_body_tag/1,
+        groups_for_modules: [
+          Core: [AshTypst, AshTypst.Context],
+          "Data Encoding": [AshTypst.Code],
+          Structs: [
+            AshTypst.Context.Options,
+            AshTypst.PDFOptions,
+            AshTypst.CompileResult,
+            AshTypst.CompileError,
+            AshTypst.Diagnostic,
+            AshTypst.Span,
+            AshTypst.TraceItem,
+            AshTypst.FontOptions
+          ]
+        ]
       ],
       aliases: aliases()
     ]
@@ -47,7 +63,11 @@ defmodule AshTypst.MixProject do
         "native/typst_nif/src",
         "native/typst_nif/Cargo*",
         "checksum-*.exs",
-        "mix.exs"
+        ".formatter.exs",
+        "mix.exs",
+        "README.md",
+        "CHANGELOG.md",
+        "LICENSE.md"
       ]
     ]
   end
@@ -77,6 +97,48 @@ defmodule AshTypst.MixProject do
       {:rustler_precompiled, "~> 0.8"}
     ]
   end
+
+  defp before_closing_head_tag(:html) do
+    """
+    <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.2.3/dist/mermaid.min.js"></script>
+    """
+  end
+
+  defp before_closing_head_tag(:epub), do: ""
+
+  defp before_closing_body_tag(:html) do
+    """
+    <script>
+      let initialized = false;
+
+      window.addEventListener("exdoc:loaded", () => {
+        if (!initialized) {
+          mermaid.initialize({
+            startOnLoad: false,
+            theme: document.body.className.includes("dark") ? "dark" : "default"
+          });
+          initialized = true;
+        }
+
+        let id = 0;
+        for (const codeEl of document.querySelectorAll("pre code.mermaid")) {
+          const preEl = codeEl.parentElement;
+          const graphDefinition = codeEl.textContent;
+          const graphEl = document.createElement("div");
+          const graphId = "mermaid-graph-" + id++;
+          mermaid.render(graphId, graphDefinition).then(({svg, bindFunctions}) => {
+            graphEl.innerHTML = svg;
+            bindFunctions?.(graphEl);
+            preEl.insertAdjacentElement("afterend", graphEl);
+            preEl.remove();
+          });
+        }
+      });
+    </script>
+    """
+  end
+
+  defp before_closing_body_tag(:epub), do: ""
 
   defp aliases do
     [

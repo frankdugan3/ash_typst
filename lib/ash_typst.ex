@@ -1,147 +1,123 @@
 defmodule AshTypst do
   @moduledoc """
-  Documentation for `AshTypst`.
-  """
+  Precompiled Rust NIFs for rendering [Typst](https://typst.app) documents from Elixir.
 
-  alias __MODULE__.NIF
+  All rendering goes through a persistent `AshTypst.Context`, which loads fonts
+  once and keeps the compiled document in memory so you can render pages, export
+  PDFs, or re-compile after a markup change without repeating expensive setup.
+
+  ## Architecture
+
+  ```mermaid
+  graph TB
+    subgraph Elixir
+      direction LR
+      C[AshTypst.Code] -->|encode| A[AshTypst.Context] -->|NIF calls| N[AshTypst.NIF]
+    end
+
+    N --> W
+    N --> VF
+    N --> IN
+    N --> F
+
+    subgraph "Rust -- TypstContext resource"
+      subgraph "SystemWorld (persistent)"
+        direction LR
+        W[Markup]
+        VF[Virtual Files]
+        IN[sys.inputs]
+        F[Fonts + FontBook]
+        FS["File Slots -- disk cache"]
+      end
+
+      W  -->|compile| PD
+      VF -->|import| PD
+      IN -->|sys.inputs| PD
+      F  -->|font resolve| PD
+      FS -->|import pkg| PD
+
+      subgraph "Compiled Output"
+        PD["PagedDocument (cached)"]
+      end
+
+      PD -->|render_svg| SVG[SVG string]
+      PD -->|export_pdf| PDF[PDF binary]
+      W  -->|export_html| HTML[HTML string]
+    end
+  ```
+
+  **Key points:**
+
+  - The `TypstContext` is a Rust NIF resource held as an opaque reference in Elixir.
+  - Fonts are scanned once at context creation and reused for every compile.
+  - `compile/1` stores a `PagedDocument`; `render_svg/2` and `export_pdf/2` read from it without recompiling.
+  - `export_html/1` performs its own compilation (HTML uses a different document type internally).
+  - Virtual files and `sys.inputs` persist across compiles until explicitly changed.
+
+  ## Quick start
+
+      # Create a context (fonts scanned once)
+      {:ok, ctx} = AshTypst.Context.new(root: "/path/to/templates")
+
+      # Set markup and compile
+      :ok = AshTypst.Context.set_markup(ctx, "= Hello World")
+      {:ok, %AshTypst.CompileResult{page_count: 1}} = AshTypst.Context.compile(ctx)
+
+      # Render any page as SVG
+      {:ok, svg} = AshTypst.Context.render_svg(ctx, page: 0)
+
+      # Export the full document as PDF
+      {:ok, pdf_binary} = AshTypst.Context.export_pdf(ctx)
+
+  ## Data injection
+
+  You can feed Elixir data into templates in two ways:
+
+  ### Virtual files
+
+  Create in-memory `.typ` files that your template can `#import`:
+
+      AshTypst.Context.set_virtual_file(ctx, "data.typ", ~s(#let title = "Q4 Report"))
+      AshTypst.Context.set_markup(ctx, ~s(#import "data.typ": title\\n= \\#title))
+
+  For large datasets, stream records in batches to keep Elixir memory flat:
+
+      AshTypst.Context.stream_virtual_file(ctx, "rows.typ", records_stream,
+        variable_name: "rows",
+        context: %{timezone: "America/New_York"}
+      )
+
+  ### `sys.inputs`
+
+  Pass simple string key/value pairs accessible via `#sys.inputs` in templates:
+
+      AshTypst.Context.set_inputs(ctx, %{"theme" => "dark", "locale" => "en"})
+
+  ## Data encoding
+
+  The `AshTypst.Code` protocol converts Elixir values to Typst source syntax.
+  It handles maps, lists, dates, decimals, Ash resources, and more.
+  See `AshTypst.Code.encode/2` for the full type mapping.
+
+  ## Live editing
+
+  The context is designed for iterative workflows. Only the markup (or virtual
+  file) that changed needs to be re-set before re-compiling; fonts and other
+  state stay hot:
+
+      :ok = AshTypst.Context.set_markup(ctx, updated_template)
+      {:ok, _} = AshTypst.Context.compile(ctx)
+      {:ok, svg} = AshTypst.Context.render_svg(ctx, page: current_page)
+  """
 
   @doc """
-  Stream an Elixir data source into a file, encoded into Typst code format.
+  List all font families available to Typst.
+
+  This is a standalone operation that does not require a context.
+  For fonts loaded in a context, use `AshTypst.Context.font_families/1`.
   """
-  @spec stream_to_datafile!(Enumerable.t(), String.t(), keyword()) :: :ok
-  def stream_to_datafile!(stream, filepath, opts \\ []) do
-    variable_name = opts[:variable_name] || "data"
-    context = opts[:context] || []
-    File.write!(filepath, "let #{variable_name} = (\n")
-
-    stream
-    |> Stream.map(&("  " <> AshTypst.Code.encode(&1, context) <> ",\n"))
-    |> Stream.into(File.stream!(filepath, [:append]))
-    |> Stream.run()
-
-    File.write!(filepath, ")", [:append])
-  end
-
-  defmodule PreviewOptions do
-    @moduledoc """
-    Options for SVG preview generation.
-    """
-    defstruct font_paths: [], ignore_system_fonts: false
-
-    @type t :: %__MODULE__{
-            font_paths: [String.t()],
-            ignore_system_fonts: boolean()
-          }
-  end
-
-  @doc """
-  Generate an SVG preview of the first page of a Typst document.
-
-  ## Options (PreviewOptions struct)
-
-  - `:font_paths` - List of additional font directory paths to search
-  - `:ignore_system_fonts` - Whether to ignore system fonts (default: false)
-
-  ## Examples
-
-      AshTypst.preview("#heading[Hello World]")
-      # => {:ok, {svg_content, diagnostics}}
-
-      AshTypst.preview("#heading[Hello World]", %AshTypst.PreviewOptions{font_paths: ["/path/to/fonts"]})
-      # => {:ok, {svg_content, diagnostics}}
-
-      AshTypst.preview("#heading[Hello World]", %AshTypst.PreviewOptions{ignore_system_fonts: true})
-      # => {:ok, {svg_content, diagnostics}}
-
-  """
-  @spec preview(String.t(), PreviewOptions.t()) ::
-          {:ok, {String.t(), list()}} | {:error, map()}
-  def preview(markup, %PreviewOptions{} = opts \\ %PreviewOptions{}) do
-    NIF.preview(markup, opts)
-  end
-
-  defmodule PDFOptions do
-    @moduledoc """
-    Options for PDF generation.
-    """
-    defstruct pages: nil,
-              pdf_standards: [],
-              document_id: nil,
-              font_paths: [],
-              ignore_system_fonts: false
-
-    @type t :: %__MODULE__{
-            pages: String.t() | nil,
-            pdf_standards: [:pdf_1_7 | :pdf_a_2b | :pdf_a_3b],
-            document_id: String.t() | nil,
-            font_paths: [String.t()],
-            ignore_system_fonts: boolean()
-          }
-  end
-
-  @doc """
-  Compile a typst document into a PDF file.
-
-  ## Options (PDFOptions struct)
-
-  - `:pages` - String specifying which pages to export (e.g., "1-5", "1,3,7")
-  - `:pdf_standards` - List of PDF standard compliance (e.g., `[:pdf_1_7, :pdf_a_2b]`) (default: [])
-  - `:document_id` - Custom document identifier for tracking/caching
-  - `:font_paths` - List of additional font directory paths to search
-  - `:ignore_system_fonts` - Whether to ignore system fonts (default: false)
-
-  ## Examples
-
-      AshTypst.export_pdf("#heading[Hello World]")
-      # => {:ok, {pdf_binary, diagnostics}}
-
-      AshTypst.export_pdf("#heading[Hello World]", %AshTypst.PDFOptions{pages: "1-5", pdf_standards: [:pdf_a_2b]})
-      # => {:ok, {pdf_binary, diagnostics}}
-
-      AshTypst.export_pdf("#heading[Hello World]", %AshTypst.PDFOptions{font_paths: ["/path/to/fonts"], ignore_system_fonts: true})
-      # => {:ok, {pdf_binary, diagnostics}}
-
-  """
-  @spec export_pdf(String.t(), PDFOptions.t()) ::
-          {:ok, {String.t(), list()}} | {:error, map()}
-  def export_pdf(markup, %PDFOptions{} = opts \\ %PDFOptions{}) do
-    NIF.export_pdf(markup, opts)
-  end
-
-  defmodule FontOptions do
-    @moduledoc """
-    Options for font operations.
-    """
-    defstruct font_paths: [], ignore_system_fonts: false
-
-    @type t :: %__MODULE__{
-            font_paths: [String.t()],
-            ignore_system_fonts: boolean()
-          }
-  end
-
-  @doc """
-  List all fonts detected by Typst.
-
-  ## Options (FontOptions struct)
-
-  - `:font_paths` - List of additional font directory paths to search
-  - `:ignore_system_fonts` - Whether to ignore system fonts (default: false)
-
-  ## Examples
-
-      AshTypst.font_families()
-      # => ["Arial", "Times New Roman", ...]
-
-      AshTypst.font_families(%AshTypst.FontOptions{font_paths: ["/path/to/custom/fonts"]})
-      # => ["Arial", "Times New Roman", "Custom Font", ...]
-
-      AshTypst.font_families(%AshTypst.FontOptions{ignore_system_fonts: true})
-      # => []  # Only custom fonts if any
-
-  """
-  @spec font_families(FontOptions.t()) :: {:ok, [String.t()]} | {:error, String.t()}
-  def font_families(%FontOptions{} = opts \\ %FontOptions{}) do
-    NIF.font_families(opts)
+  @spec font_families(AshTypst.FontOptions.t()) :: [String.t()]
+  def font_families(%AshTypst.FontOptions{} = opts \\ %AshTypst.FontOptions{}) do
+    AshTypst.NIF.font_families(opts)
   end
 end
