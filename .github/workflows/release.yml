@@ -1,53 +1,94 @@
-name: Build precompiled NIFs
+name: Precompile NIFs
 
 on:
   push:
     tags:
-      - "v*"
-
-permissions:
-  contents: write
+      - "*"
+  workflow_dispatch:
 
 jobs:
+  create_release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - name: Create or verify release exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view ${{ github.ref_name }} --repo ${{ github.repository }} >/dev/null 2>&1; then
+            echo "Release ${{ github.ref_name }} already exists"
+          else
+            gh release create ${{ github.ref_name }} \
+              --repo ${{ github.repository }} \
+              --title "${{ github.ref_name }}" \
+              --generate-notes
+          fi
+
   build_release:
-    name: NIF ${{ matrix.nif }} - ${{ matrix.job.target }} (${{ matrix.job.os }})
+    needs: [create_release]
+    name: NIF ${{ matrix.nif }} - ${{ matrix.job.target }} (${{ matrix.job.os }} | ${{ matrix.job.variant || 'default' }})
     runs-on: ${{ matrix.job.os }}
+
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
     strategy:
       fail-fast: false
       matrix:
-        nif: ["2.15", "2.16", "2.17"]
+        nif: ["2.15"]
         job:
-          - { target: aarch64-apple-darwin,        os: macos-15 }
-          - { target: x86_64-apple-darwin,         os: macos-15 }
-          - { target: aarch64-unknown-linux-gnu,   os: ubuntu-22.04, use-cross: true }
-          - { target: aarch64-unknown-linux-musl,  os: ubuntu-22.04, use-cross: true }
-          - { target: x86_64-unknown-linux-gnu,    os: ubuntu-22.04 }
-          - { target: x86_64-unknown-linux-musl,   os: ubuntu-22.04, use-cross: true }
-          - { target: x86_64-pc-windows-gnu,       os: windows-2022 }
-          - { target: x86_64-pc-windows-msvc,      os: windows-2022 }
+          - { target: aarch64-unknown-linux-gnu   , os: ubuntu-22.04 , use-cross: true , rustflags: "-C codegen-units=1" }
+          - { target: aarch64-unknown-linux-musl  , os: ubuntu-22.04 , use-cross: true , rustflags: "-C target-feature=-crt-static -C codegen-units=1" }
+          - { target: arm-unknown-linux-gnueabihf , os: ubuntu-22.04 , use-cross: true }
+          - { target: aarch64-apple-darwin        , os: macos-14      }
+          - { target: riscv64gc-unknown-linux-gnu , os: ubuntu-22.04 , use-cross: true }
+          - { target: x86_64-apple-darwin         , os: macos-14      }
+          - { target: x86_64-unknown-linux-gnu    , os: ubuntu-22.04  }
+          - { target: x86_64-unknown-linux-musl   , os: ubuntu-22.04 , use-cross: true }
+          - { target: x86_64-pc-windows-gnu       , os: windows-2022  }
+          - { target: x86_64-pc-windows-msvc      , os: windows-2022  }
 
     steps:
-      - name: Checkout repository
+      - name: Checkout source code
         uses: actions/checkout@v4
 
-      - name: Extract project version
+      - name: Extract crate information
         shell: bash
         run: |
-          echo "PROJECT_VERSION=$(sed -n 's/^ *@version "\(.*\)"/\1/p' mix.exs | head -n1)" >> $GITHUB_ENV
+          # Get the project version from mix.exs
+          echo "PROJECT_VERSION=$(sed -n 's/^  @version "\(.*\)"/\1/p' mix.exs | head -n1)" >> $GITHUB_ENV
 
-      - name: Install Rust toolchain
+      - name: Maybe add Rust flags for compilation
+        shell: bash
+        run: |
+          echo "RUSTFLAGS=${{ matrix.job.rustflags }}" >> $GITHUB_ENV
+        if: ${{ matrix.job.rustflags }}
+
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.92.0
           targets: ${{ matrix.job.target }}
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2
         with:
           prefix-key: v0-precomp
           shared-key: ${{ matrix.job.target }}-${{ matrix.nif }}
-          workspaces: native/typst_nif
+          workspaces: |
+            native/typst_nif
 
-      - name: Build precompiled NIF
+      - name: Set Rust stack size
+        shell: bash
+        run: |
+          echo "RUST_MIN_STACK=16777216" >> $GITHUB_ENV
+          echo "CARGO_BUILD_JOBS=1" >> $GITHUB_ENV
+
+      - name: Build the project
         id: build-crate
         uses: philss/rustler-precompiled-action@v1.1.4
         with:
@@ -55,18 +96,33 @@ jobs:
           project-version: ${{ env.PROJECT_VERSION }}
           target: ${{ matrix.job.target }}
           nif-version: ${{ matrix.nif }}
-          use-cross: ${{ matrix.job.use-cross || false }}
-          cross-version: "from-source"
+          use-cross: ${{ matrix.job.use-cross }}
+          cross-version: ${{ matrix.job.cross-version || 'from-source' }}
           project-dir: "native/typst_nif"
+          cargo-args: ${{ matrix.job.cargo-args }}
+          variant: ${{ matrix.job.variant }}
 
-      - name: Upload artifact
+      - name: Artifact attestation
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: ${{ steps.build-crate.outputs.file-path }}
+
+      - name: Artifact upload
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.build-crate.outputs.file-name }}
           path: ${{ steps.build-crate.outputs.file-path }}
 
-      - name: Publish to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            ${{ steps.build-crate.outputs.file-path }}
+      - name: Publish archives and packages
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ github.ref_name }} \
+            ${{ steps.build-crate.outputs.file-path }} \
+            --repo ${{ github.repository }} \
+            --clobber
+
+
+

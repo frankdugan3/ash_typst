@@ -1,7 +1,7 @@
 defmodule AshTypst.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.1.1-rc.0"
   @source_url "https://github.com/frankdugan3/ash_typst"
 
   def project do
@@ -104,6 +104,7 @@ defmodule AshTypst.MixProject do
       {:tzdata, "~> 1.1", only: :test},
       {:mix_test_watch, "~> 1.2", only: :test},
       {:git_ops, "~> 2.7", only: :dev},
+      {:usage_rules, "~> 1.1", only: :dev},
       {:igniter, "~> 0.6", optional: true},
       {:rustler, "~> 0.35", optional: true},
       {:sourceror, "~> 1.7", optional: true},

@@ -19,7 +19,7 @@ nif_version_2_17 = ["rustler/nif_version_2_17"]
 chrono = "0.4"
 ecow = "0.2"
 parking_lot = "0.12"
-rustler = { version = "0.37", default-features = false, features = ["derive", "nif_version_2_15"] }
+rustler = { version = "0.37", default-features = false, features = ["derive"] }
 typst = "0.14"
 typst-kit = "0.14"
 typst-pdf = "0.14"
