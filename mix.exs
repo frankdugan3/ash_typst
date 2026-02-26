@@ -1,7 +1,7 @@
 defmodule AshTypst.MixProject do
   use Mix.Project
 
-  @version "0.1.1-rc.0"
+  @version "0.1.1-rc.1"
   @source_url "https://github.com/frankdugan3/ash_typst"
 
   def project do
