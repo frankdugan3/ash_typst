@@ -2,12 +2,16 @@ defmodule AshTypst.Resource.Run do
   @moduledoc false
   use Ash.Resource.Actions.Implementation
 
+  alias Ash.Error.Query.NotFound
+  alias AshTypst.Resource.Errors
+  alias AshTypst.Resource.Info
+
   require Ash.Query
 
   @impl true
   def run(input, opts, context) do
     resource = input.resource
-    template = AshTypst.Resource.Info.template!(resource, opts[:template])
+    template = Info.template!(resource, opts[:template])
 
     with {:ok, data} <- fetch_data(resource, input, opts, context),
          {:ok, ctx} <- build_context(resource),
@@ -88,17 +92,17 @@ defmodule AshTypst.Resource.Run do
   end
 
   defp handle_not_found({:ok, nil}, %{not_found: :error}) do
-    {:error, Ash.Error.Query.NotFound.exception([])}
+    {:error, NotFound.exception([])}
   end
 
   defp handle_not_found({:ok, nil}, %{not_found: nil}), do: {:ok, nil}
-  defp handle_not_found({:ok, nil}, _), do: {:error, Ash.Error.Query.NotFound.exception([])}
+  defp handle_not_found({:ok, nil}, _), do: {:error, NotFound.exception([])}
   defp handle_not_found(result, _), do: result
 
   defp build_context(resource) do
-    {:ok, root} = AshTypst.Resource.Info.typst_root(resource)
-    {:ok, font_paths} = AshTypst.Resource.Info.typst_font_paths(resource)
-    {:ok, ignore_system_fonts} = AshTypst.Resource.Info.typst_ignore_system_fonts(resource)
+    {:ok, root} = Info.typst_root(resource)
+    {:ok, font_paths} = Info.typst_font_paths(resource)
+    {:ok, ignore_system_fonts} = Info.typst_ignore_system_fonts(resource)
 
     AshTypst.Context.new(
       root: root,
@@ -108,7 +112,7 @@ defmodule AshTypst.Resource.Run do
   end
 
   defp set_template(ctx, %{source: source}, resource) when not is_nil(source) do
-    {:ok, root} = AshTypst.Resource.Info.typst_root(resource)
+    {:ok, root} = Info.typst_root(resource)
     path = Path.join(root, source)
 
     case File.read(path) do
@@ -160,7 +164,7 @@ defmodule AshTypst.Resource.Run do
         {:ok, result}
 
       {:error, compile_error} ->
-        {:error, AshTypst.Resource.Errors.CompileError.from(compile_error)}
+        {:error, Errors.CompileError.from(compile_error)}
     end
   end
 

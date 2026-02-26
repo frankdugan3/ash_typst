@@ -10,20 +10,23 @@ defmodule AshTypst.Resource.Info do
 
   use Spark.InfoGenerator, extension: AshTypst.Resource, sections: [:typst]
 
+  alias AshTypst.Resource.{Render, Template}
+  alias Spark.Dsl.Extension
+
   @doc "Returns all templates declared in the `typst` section."
-  @spec templates(Spark.Dsl.t() | module()) :: [AshTypst.Resource.Template.t()]
+  @spec templates(Spark.Dsl.t() | module()) :: [Template.t()]
   def templates(resource) do
     resource
-    |> Spark.Dsl.Extension.get_entities([:typst])
-    |> Enum.filter(&match?(%AshTypst.Resource.Template{}, &1))
+    |> Extension.get_entities([:typst])
+    |> Enum.filter(&match?(%Template{}, &1))
   end
 
   @doc "Returns all render entities declared in the `typst` section."
-  @spec renders(Spark.Dsl.t() | module()) :: [AshTypst.Resource.Render.t()]
+  @spec renders(Spark.Dsl.t() | module()) :: [Render.t()]
   def renders(resource) do
     resource
-    |> Spark.Dsl.Extension.get_entities([:typst])
-    |> Enum.filter(&match?(%AshTypst.Resource.Render{}, &1))
+    |> Extension.get_entities([:typst])
+    |> Enum.filter(&match?(%Render{}, &1))
   end
 
   @doc "Looks up a template by name. Returns `{:ok, template}` or `:error`."

@@ -1,7 +1,7 @@
 defmodule AshTypst.MixProject do
   use Mix.Project
 
-  @version "0.0.1"
+  @version "0.1.0"
   @source_url "https://github.com/frankdugan3/ash_typst"
 
   def project do
@@ -158,7 +158,10 @@ defmodule AshTypst.MixProject do
   defp aliases do
     [
       update: ["deps.update --all", "cmd --cd native/typst_nif cargo update --verbose"],
-      format: ["spark.formatter --extensions AshTypst.Resource", "cmd --cd native/typst_nif cargo fmt"],
+      "format.all": [
+        "spark.formatter --extensions AshTypst.Resource",
+        "cmd --cd native/typst_nif cargo fmt"
+      ],
       outdated: ["hex.outdated", "cmd --cd native/typst_nif cargo update --locked --verbose"],
       setup: ["deps.get", "cmd --cd native/typst_nif cargo fetch"],
       docs: [

@@ -2,16 +2,18 @@ defmodule AshTypst.Resource.Verifiers.ValidateFormatOptions do
   @moduledoc false
   use Spark.Dsl.Verifier
 
+  alias AshTypst.Resource.Run
+  alias Spark.Dsl.{Extension, Verifier}
   alias Spark.Error.DslError
 
   @impl true
   def verify(dsl_state) do
-    module = Spark.Dsl.Verifier.get_persisted(dsl_state, :module)
+    module = Verifier.get_persisted(dsl_state, :module)
 
     dsl_state
-    |> Spark.Dsl.Extension.get_entities([:actions])
+    |> Extension.get_entities([:actions])
     |> Enum.each(fn
-      %Ash.Resource.Actions.Action{run: {AshTypst.Resource.Run, opts}} = action ->
+      %Ash.Resource.Actions.Action{run: {Run, opts}} = action ->
         validate_page_option(opts, action, module)
         validate_pdf_options(opts, action, module)
         validate_read_options(opts, action, module)
