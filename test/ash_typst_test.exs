@@ -4,6 +4,7 @@ defmodule AshTypstTest do
   doctest AshTypst
 
   @test_markup "= Hello AshTypst\n\nThis is a *test* document with `code`."
+  @test_markup_with_date "#set document(date: datetime(year: 2025, month: 1, day: 1))\n= Hello AshTypst\n\nThis is a *test* document with `code`."
 
   describe "preview/2" do
     test "generates SVG preview with default options" do
@@ -50,14 +51,14 @@ defmodule AshTypstTest do
 
     test "exports PDF with PDF standards" do
       opts = %AshTypst.PDFOptions{pdf_standards: [:pdf_a_2b]}
-      assert {:ok, {pdf, _diagnostics}} = AshTypst.export_pdf(@test_markup, opts)
+      assert {:ok, {pdf, _diagnostics}} = AshTypst.export_pdf(@test_markup_with_date, opts)
       assert is_binary(pdf)
       assert String.length(pdf) > 1000
     end
 
     test "exports PDF with multiple standards" do
       opts = %AshTypst.PDFOptions{pdf_standards: [:pdf_1_7, :pdf_a_2b]}
-      assert {:ok, {pdf, _diagnostics}} = AshTypst.export_pdf(@test_markup, opts)
+      assert {:ok, {pdf, _diagnostics}} = AshTypst.export_pdf(@test_markup_with_date, opts)
       assert is_binary(pdf)
     end
 
@@ -88,7 +89,7 @@ defmodule AshTypstTest do
         ignore_system_fonts: false
       }
 
-      assert {:ok, {pdf, _diagnostics}} = AshTypst.export_pdf(@test_markup, opts)
+      assert {:ok, {pdf, _diagnostics}} = AshTypst.export_pdf(@test_markup_with_date, opts)
       assert is_binary(pdf)
     end
 

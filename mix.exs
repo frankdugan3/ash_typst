@@ -18,14 +18,20 @@ defmodule AshTypst.MixProject do
         source_ref: "v#{@version}",
         extras: ["CHANGELOG.md"]
       ],
-      preferred_cli_env: [
+      aliases: aliases()
+    ]
+  end
+
+  def cli do
+    [
+      preferred_envs: [
         check: :test,
         credo: :test,
         dialyzer: :test,
         doctor: :test,
-        "deps.audit": :test
-      ],
-      aliases: aliases()
+        "deps.audit": :test,
+        "test.watch": :test
+      ]
     ]
   end
 
@@ -67,9 +73,7 @@ defmodule AshTypst.MixProject do
       {:rustler, "~> 0.35", optional: true},
       {:sourceror, "~> 1.7", optional: true},
       {:ash, "~> 3.0"},
-      {:ash_phoenix, "~> 2.3.10"},
       {:decimal, "~> 2.0"},
-      {:phoenix_live_view, "~> 1.1.0-rc.3"},
       {:rustler_precompiled, "~> 0.8"}
     ]
   end

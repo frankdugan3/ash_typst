@@ -15,7 +15,7 @@ use typst::layout::PagedDocument;
 use typst::syntax::{FileId, Source, VirtualPath};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
-use typst::{Library, World};
+use typst::{Library, LibraryExt, World};
 use typst_kit::download::{DownloadState, Downloader, Progress};
 use typst_kit::fonts::{FontSlot, Fonts};
 use typst_kit::package::PackageStorage;
@@ -193,7 +193,7 @@ impl From<PdfStandardNif> for PdfStandard {
 }
 
 impl PdfOptionsNif {
-    fn to_pdf_options(&self) -> Result<PdfOptions, Error> {
+    fn to_pdf_options(&self) -> Result<PdfOptions<'_>, Error> {
         let mut opts = PdfOptions::default();
 
         if let Some(ref document_id) = self.document_id {
