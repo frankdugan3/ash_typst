@@ -17,6 +17,7 @@ nif_version_2_17 = ["rustler/nif_version_2_17"]
 
 [dependencies]
 chrono = "0.4"
+openssl = { version = "0.10", features = ["vendored"] }
 ecow = "0.2"
 parking_lot = "0.12"
 rustler = { version = "0.37", default-features = false, features = ["derive", "nif_version_2_15"] }
