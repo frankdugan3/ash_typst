@@ -68,9 +68,17 @@ defmodule AshTypst.Resource.Run do
 
   defp maybe_filter(query, nil, _input), do: query
 
-  defp maybe_filter(query, filter, _input) do
-    Ash.Query.do_filter(query, filter)
+  defp maybe_filter(query, filter, input) do
+    Ash.Query.do_filter(query, resolve_args(filter, input.arguments))
   end
+
+  defp resolve_args({:_arg, name}, arguments), do: Map.get(arguments, name)
+
+  defp resolve_args(%Ash.Query.Call{args: args} = call, arguments) do
+    %{call | args: Enum.map(args, &resolve_args(&1, arguments))}
+  end
+
+  defp resolve_args(other, _arguments), do: other
 
   defp maybe_load(query, []), do: query
   defp maybe_load(query, load), do: Ash.Query.load(query, load)
