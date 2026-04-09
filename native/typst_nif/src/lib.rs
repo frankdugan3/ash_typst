@@ -28,6 +28,17 @@ use typst_timing::{timed, TimingScope};
 static MARKUP_ID: LazyLock<FileId> =
     LazyLock::new(|| FileId::new_fake(VirtualPath::new("MARKUP.typ")));
 
+/// Stack size for Typst compilation threads (64 MB).
+///
+/// `typst::compile()` recurses deeply for nested content.  On BEAM dirty-
+/// scheduler threads the default stack is ~2 MB (Linux) / ~8 MB (macOS),
+/// which overflows at ~27 / ~31 nesting levels.  A stack overflow triggers
+/// SIGSEGV — not a Rust panic — and kills the entire BEAM VM.
+///
+/// Spawning compilation on a dedicated thread with a large stack pushes the
+/// overflow threshold to ~800+ levels, far beyond any realistic document.
+const COMPILE_STACK_SIZE: usize = 64 * 1024 * 1024;
+
 rustler::atoms! {
     ok,
     pdf_1_7,
@@ -666,25 +677,33 @@ fn context_set_markup(ctx: ResourceArc<TypstContext>, markup: String) -> Atom {
 
 #[rustler::nif(schedule = "DirtyCpu")]
 fn context_compile(ctx: ResourceArc<TypstContext>) -> Result<CompileResultNif, CompileErrorNif> {
-    let mut world_guard = ctx.world.lock();
-    world_guard.reset();
-    let result = typst::compile::<PagedDocument>(&*world_guard);
-    match result.output {
-        Ok(document) => {
-            let page_count = document.pages.len();
-            let warnings = diagnostics_to_vec(result.warnings, &*world_guard);
-            *ctx.document.lock() = Some(document);
-            Ok(CompileResultNif {
-                page_count,
-                warnings,
-            })
-        }
-        Err(errors) => {
-            let diagnostics = diagnostics_to_vec(errors, &*world_guard);
-            *ctx.document.lock() = None;
-            Err(CompileErrorNif { diagnostics })
-        }
-    }
+    std::thread::Builder::new()
+        .name("typst-compile".into())
+        .stack_size(COMPILE_STACK_SIZE)
+        .spawn(move || {
+            let mut world_guard = ctx.world.lock();
+            world_guard.reset();
+            let result = typst::compile::<PagedDocument>(&*world_guard);
+            match result.output {
+                Ok(document) => {
+                    let page_count = document.pages.len();
+                    let warnings = diagnostics_to_vec(result.warnings, &*world_guard);
+                    *ctx.document.lock() = Some(document);
+                    Ok(CompileResultNif {
+                        page_count,
+                        warnings,
+                    })
+                }
+                Err(errors) => {
+                    let diagnostics = diagnostics_to_vec(errors, &*world_guard);
+                    *ctx.document.lock() = None;
+                    Err(CompileErrorNif { diagnostics })
+                }
+            }
+        })
+        .map_err(|e| simple_error(&format!("Failed to spawn compile thread: {e}")))?
+        .join()
+        .unwrap_or_else(|_| Err(simple_error("Compilation panicked")))
 }
 
 #[rustler::nif(schedule = "DirtyCpu")]
@@ -806,20 +825,28 @@ fn context_set_inputs(ctx: ResourceArc<TypstContext>, inputs: HashMap<String, St
 
 #[rustler::nif(schedule = "DirtyCpu")]
 fn context_export_html(ctx: ResourceArc<TypstContext>) -> Result<String, CompileErrorNif> {
-    let mut world_guard = ctx.world.lock();
-    world_guard.reset();
-    let result = typst::compile::<HtmlDocument>(&*world_guard);
-    match result.output {
-        Ok(html_doc) => match typst_html::html(&html_doc) {
-            Ok(html_string) => Ok(html_string),
-            Err(errors) => Err(CompileErrorNif {
-                diagnostics: diagnostics_to_vec(errors, &*world_guard),
-            }),
-        },
-        Err(errors) => Err(CompileErrorNif {
-            diagnostics: diagnostics_to_vec(errors, &*world_guard),
-        }),
-    }
+    std::thread::Builder::new()
+        .name("typst-html".into())
+        .stack_size(COMPILE_STACK_SIZE)
+        .spawn(move || {
+            let mut world_guard = ctx.world.lock();
+            world_guard.reset();
+            let result = typst::compile::<HtmlDocument>(&*world_guard);
+            match result.output {
+                Ok(html_doc) => match typst_html::html(&html_doc) {
+                    Ok(html_string) => Ok(html_string),
+                    Err(errors) => Err(CompileErrorNif {
+                        diagnostics: diagnostics_to_vec(errors, &*world_guard),
+                    }),
+                },
+                Err(errors) => Err(CompileErrorNif {
+                    diagnostics: diagnostics_to_vec(errors, &*world_guard),
+                }),
+            }
+        })
+        .map_err(|e| simple_error(&format!("Failed to spawn HTML compile thread: {e}")))?
+        .join()
+        .unwrap_or_else(|_| Err(simple_error("HTML compilation panicked")))
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
