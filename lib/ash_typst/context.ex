@@ -104,10 +104,21 @@ defmodule AshTypst.Context do
     NIF.context_font_families(ctx)
   end
 
-  @doc "Set (or overwrite) a virtual file. Invalidates the compiled document."
+  @doc "Set (or overwrite) a virtual file with text content. Invalidates the compiled document."
   @spec set_virtual_file(t(), String.t(), String.t()) :: :ok
   def set_virtual_file(ctx, path, content) when is_binary(path) and is_binary(content) do
     NIF.context_set_virtual_file(ctx, path, content)
+  end
+
+  @doc """
+  Set (or overwrite) a virtual file with raw binary content. Invalidates the compiled document.
+
+  Use this for non-text files like images (PNG, SVG) that Typst reads via
+  `#image(read("name", encoding: none))`.
+  """
+  @spec set_virtual_file_binary(t(), String.t(), binary()) :: :ok
+  def set_virtual_file_binary(ctx, path, content) when is_binary(path) and is_binary(content) do
+    NIF.context_set_virtual_file_binary(ctx, path, content)
   end
 
   @doc """

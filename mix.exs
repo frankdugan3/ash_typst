@@ -106,7 +106,7 @@ defmodule AshTypst.MixProject do
       {:git_ops, "~> 2.7", only: :dev},
       {:usage_rules, "~> 1.1", only: :dev},
       {:igniter, "~> 0.6", optional: true},
-      {:rustler, "~> 0.35", optional: true},
+      {:rustler, ">= 0.35.0"},
       {:sourceror, "~> 1.7", optional: true},
       {:ash, "~> 3.0"},
       {:decimal, "~> 2.0"},
