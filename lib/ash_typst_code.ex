@@ -3,6 +3,8 @@ defprotocol AshTypst.Code do
   Protocol to support Typst code syntax.
   """
 
+  @fallback_to_any true
+
   @doc """
   Encode Elixir data structures into Typst code syntax.
 
@@ -130,7 +132,7 @@ end
 
 defimpl AshTypst.Code, for: DateTime do
   def encode(datetime, context) do
-    timezone = context.timezone || "Etc/UTC"
+    timezone = Map.get(context, :timezone, "Etc/UTC")
 
     %{year: year, month: month, day: day, hour: hour, minute: minute, second: second} =
       DateTime.shift_zone!(datetime, timezone)
