@@ -57,6 +57,53 @@ defmodule AshTypst.ResourceTest do
     end
   end
 
+  defmodule ConditionalArgsResource do
+    use Ash.Resource,
+      domain: AshTypst.ResourceTest.TestDomain,
+      extensions: [AshTypst.Resource]
+
+    typst do
+      template :receipt do
+        markup(~TYPST"""
+        #import "data.typ": args
+        Page 1 — seller: #args.seller_name
+        #if args.tax_permit != "" [
+          #pagebreak()
+          Page with tax permit: #args.tax_permit
+        ]
+        #if args.center_address != "" [
+          #pagebreak()
+          Page with address: #args.center_address
+        ]
+        """)
+      end
+
+      render :render_receipt do
+        template(:receipt)
+        format(:pdf)
+
+        argument :seller_name, :string, allow_nil?: false
+
+        argument :tax_permit, :string,
+          default: "",
+          constraints: [allow_empty?: true]
+
+        argument :center_address, :string,
+          default: "",
+          constraints: [allow_empty?: true]
+      end
+
+      render :render_receipt_string_default do
+        template(:receipt)
+        format(:pdf)
+
+        argument :seller_name, :string, allow_nil?: false
+        argument :tax_permit, :string, default: ""
+        argument :center_address, :string, default: ""
+      end
+    end
+  end
+
   defmodule PdfOptionsResource do
     use Ash.Resource,
       domain: AshTypst.ResourceTest.TestDomain,
@@ -205,6 +252,65 @@ defmodule AshTypst.ResourceTest do
       assert doc.format == :pdf
       assert is_binary(doc.data)
       assert <<"%PDF", _::binary>> = doc.data
+    end
+
+    test "empty-string argument hides conditional block via render action" do
+      input =
+        Ash.ActionInput.for_action(ConditionalArgsResource, :render_receipt, %{
+          seller_name: "Acme",
+          tax_permit: "",
+          center_address: ""
+        })
+
+      assert {:ok, %AshTypst.Document{page_count: 1}} = Ash.run_action(input)
+    end
+
+    test "non-empty-string argument shows conditional block via render action" do
+      input =
+        Ash.ActionInput.for_action(ConditionalArgsResource, :render_receipt, %{
+          seller_name: "Acme",
+          tax_permit: "TP-123",
+          center_address: "1 Main St"
+        })
+
+      assert {:ok, %AshTypst.Document{page_count: 3}} = Ash.run_action(input)
+    end
+
+    test "argument defaults behave identically to explicit empty strings" do
+      input =
+        Ash.ActionInput.for_action(ConditionalArgsResource, :render_receipt, %{
+          seller_name: "Acme"
+        })
+
+      assert {:ok, %AshTypst.Document{page_count: 1}} = Ash.run_action(input)
+    end
+
+    test "mixed empty and non-empty arguments render correctly" do
+      input =
+        Ash.ActionInput.for_action(ConditionalArgsResource, :render_receipt, %{
+          seller_name: "Acme",
+          tax_permit: "",
+          center_address: "1 Main St"
+        })
+
+      assert {:ok, %AshTypst.Document{page_count: 2}} = Ash.run_action(input)
+    end
+
+    test "plain :string argument without allow_empty? casts \"\" to nil, which encodes to typst `none`" do
+      input =
+        Ash.ActionInput.for_action(ConditionalArgsResource, :render_receipt_string_default, %{
+          seller_name: "Acme",
+          tax_permit: "",
+          center_address: ""
+        })
+
+      assert input.arguments == %{
+               seller_name: "Acme",
+               tax_permit: nil,
+               center_address: nil
+             }
+
+      assert {:ok, %AshTypst.Document{page_count: 3}} = Ash.run_action(input)
     end
 
     test "renders PDF with pdf_options" do
