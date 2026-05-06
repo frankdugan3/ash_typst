@@ -168,14 +168,38 @@ defmodule AshTypst.Resource do
     describe: "Configuration for Typst template rendering.",
     schema: [
       root: [
-        type: :string,
+        type: {:or, [:string, {:tuple, [:atom, :string]}]},
         default: "priv/typst",
-        doc: "Root directory for template file resolution."
+        doc: """
+        Root directory for template file resolution.
+
+        Accepts either:
+
+          * a `String.t()` — used verbatim. Relative paths resolve
+            against the current working directory and only work when
+            cwd matches the project root (dev/test).
+          * a `{otp_app, sub_path}` tuple — resolved at runtime via
+            `Application.app_dir/2`, which works in dev, test, and
+            Mix releases (where `priv/` lives at
+            `<release>/lib/<app>-<version>/priv/...`).
+
+        For releases-friendly setups, prefer the tuple form:
+
+            root({:my_app, "priv/typst"})
+        """
       ],
       font_paths: [
-        type: {:list, :string},
+        type: {:list, {:or, [:string, {:tuple, [:atom, :string]}]}},
         default: [],
-        doc: "Additional font search directories."
+        doc: """
+        Additional font search directories.
+
+        Each entry may be a string (used verbatim) or a
+        `{otp_app, sub_path}` tuple (resolved via
+        `Application.app_dir/2` at runtime). Mix releases relocate
+        `priv/` files, so the tuple form is recommended for paths
+        rooted in your app's `priv/`.
+        """
       ],
       ignore_system_fonts: [
         type: :boolean,

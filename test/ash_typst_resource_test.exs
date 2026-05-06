@@ -165,6 +165,44 @@ defmodule AshTypst.ResourceTest do
       assert {:ok, false} =
                AshTypst.Resource.Info.typst_ignore_system_fonts(InlineTemplateResource)
     end
+
+    test "root accepts {otp_app, sub_path} tuple for release-friendly resolution" do
+      defmodule TupleRootResource do
+        use Ash.Resource,
+          domain: AshTypst.ResourceTest.TestDomain,
+          extensions: [AshTypst.Resource]
+
+        typst do
+          root({:ash_typst, "priv/typst"})
+
+          template :greeting do
+            markup("= hi")
+          end
+        end
+      end
+
+      assert {:ok, {:ash_typst, "priv/typst"}} =
+               AshTypst.Resource.Info.typst_root(TupleRootResource)
+    end
+
+    test "font_paths accepts mixed list of strings and tuples" do
+      defmodule MixedFontPathsResource do
+        use Ash.Resource,
+          domain: AshTypst.ResourceTest.TestDomain,
+          extensions: [AshTypst.Resource]
+
+        typst do
+          font_paths(["priv/fonts", {:ash_typst, "priv/fonts"}])
+
+          template :greeting do
+            markup("= hi")
+          end
+        end
+      end
+
+      assert {:ok, ["priv/fonts", {:ash_typst, "priv/fonts"}]} =
+               AshTypst.Resource.Info.typst_font_paths(MixedFontPathsResource)
+    end
   end
 
   describe "transformer" do

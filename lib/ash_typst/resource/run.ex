@@ -113,15 +113,15 @@ defmodule AshTypst.Resource.Run do
     {:ok, ignore_system_fonts} = Info.typst_ignore_system_fonts(resource)
 
     AshTypst.Context.new(
-      root: root,
-      font_paths: font_paths,
+      root: AshTypst.PathResolver.resolve(root),
+      font_paths: AshTypst.PathResolver.resolve_all(font_paths),
       ignore_system_fonts: ignore_system_fonts
     )
   end
 
   defp set_template(ctx, %{source: source}, resource) when not is_nil(source) do
     {:ok, root} = Info.typst_root(resource)
-    path = Path.join(root, source)
+    path = Path.join(AshTypst.PathResolver.resolve(root), source)
 
     case File.read(path) do
       {:ok, markup} -> AshTypst.Context.set_markup(ctx, markup)
