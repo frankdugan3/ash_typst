@@ -1,12 +1,24 @@
 defmodule AshTypst.NIF do
   @moduledoc false
 
-  mode = if Mix.env() in [:dev, :test], do: :debug, else: :release
-
-  use Rustler,
+  use RustlerPrecompiled,
     otp_app: :ash_typst,
     crate: "typst_nif",
-    mode: mode
+    base_url:
+      "https://github.com/frankdugan3/ash_typst/releases/download/v#{Mix.Project.config()[:version]}",
+    force_build: System.get_env("ASH_TYPST_BUILD") in ["1", "true"],
+    version: Mix.Project.config()[:version],
+    nif_versions: ["2.15", "2.16", "2.17"],
+    targets: ~w(
+      aarch64-apple-darwin
+      aarch64-unknown-linux-gnu
+      aarch64-unknown-linux-musl
+      x86_64-apple-darwin
+      x86_64-pc-windows-msvc
+      x86_64-pc-windows-gnu
+      x86_64-unknown-linux-gnu
+      x86_64-unknown-linux-musl
+    )
 
   def context_new(_opts), do: :erlang.nif_error(:not_loaded)
   def context_set_markup(_ctx, _markup), do: :erlang.nif_error(:not_loaded)
