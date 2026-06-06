@@ -8,7 +8,7 @@ defmodule AshTypst.MixProject do
     [
       app: :ash_typst,
       version: @version,
-      elixir: "~> 1.19",
+      elixir: "~> 1.20",
       deps: deps(),
       description: "Precompiled NIFs and tooling to render Typst documents.",
       package: package(),
@@ -109,7 +109,7 @@ defmodule AshTypst.MixProject do
       {:rustler, "~> 0.35", optional: true},
       {:sourceror, "~> 1.7", optional: true},
       {:ash, "~> 3.0"},
-      {:decimal, "~> 2.0"},
+      {:decimal, "~> 3.0"},
       {:rustler_precompiled, "~> 0.8"}
     ]
   end
@@ -169,7 +169,9 @@ defmodule AshTypst.MixProject do
         "spark.cheat_sheets --extensions AshTypst.Resource",
         "docs",
         "spark.replace_doc_links"
-      ]
+      ],
+      "nif.checksum": ["rustler_precompiled.download AshTypst.NIF --all --print"],
+      publish: ["nif.checksum", "hex.publish"]
     ]
   end
 end

@@ -110,8 +110,8 @@ Configuration for Typst template rendering.
 
 | Name | Type | Default | Docs |
 |------|------|---------|------|
-| [`root`](#typst-root){: #typst-root } | `String.t` | `"priv/typst"` | Root directory for template file resolution. |
-| [`font_paths`](#typst-font_paths){: #typst-font_paths } | `list(String.t)` | `[]` | Additional font search directories. |
+| [`root`](#typst-root){: #typst-root } | `String.t \| {atom, String.t}` | `"priv/typst"` | Root directory for template file resolution. Accepts either:   * a `String.t()` — used verbatim. Relative paths resolve     against the current working directory and only work when     cwd matches the project root (dev/test).   * a `{otp_app, sub_path}` tuple — resolved at runtime via     `Application.app_dir/2`, which works in dev, test, and     Mix releases (where `priv/` lives at     `<release>/lib/<app>-<version>/priv/...`). For releases-friendly setups, prefer the tuple form:     root({:my_app, "priv/typst"}) |
+| [`font_paths`](#typst-font_paths){: #typst-font_paths } | `list(String.t \| {atom, String.t})` | `[]` | Additional font search directories. Each entry may be a string (used verbatim) or a `{otp_app, sub_path}` tuple (resolved via `Application.app_dir/2` at runtime). Mix releases relocate `priv/` files, so the tuple form is recommended for paths rooted in your app's `priv/`. |
 | [`ignore_system_fonts`](#typst-ignore_system_fonts){: #typst-ignore_system_fonts } | `boolean` | `false` | Skip system font loading. |
 
 
@@ -305,7 +305,7 @@ Declares a preparation that runs before the template is rendered.
 
 | Name | Type | Default | Docs |
 |------|------|---------|------|
-| [`on`](#typst-render-prepare-on){: #typst-render-prepare-on } | `:read \| :action \| list(:read \| :action)` | `[:read]` | The action types the preparation should run on. By default, preparations only run on read actions. Use `:action` to run on generic actions. |
+| [`on`](#typst-render-prepare-on){: #typst-render-prepare-on } | `:read \| :action \| :create \| :update \| :destroy \| list(:read \| :action \| :create \| :update \| :destroy)` | `[:read]` | The action types the preparation should run on. By default, preparations only run on read actions. Use `:action` to run on generic actions. |
 | [`where`](#typst-render-prepare-where){: #typst-render-prepare-where } | `(any, any -> any) \| module \| list((any, any -> any) \| module)` | `[]` | Validations that should pass in order for this preparation to apply. Any of these validations failing will result in this preparation being ignored. |
 | [`only_when_valid?`](#typst-render-prepare-only_when_valid?){: #typst-render-prepare-only_when_valid? } | `boolean` | `false` | If the preparation should only run on valid queries. |
 

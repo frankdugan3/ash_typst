@@ -6,8 +6,6 @@ defmodule AshTypst.Resource.Run do
   alias AshTypst.Resource.Errors
   alias AshTypst.Resource.Info
 
-  require Ash.Query
-
   @impl true
   def run(input, opts, context) do
     resource = input.resource
@@ -141,14 +139,14 @@ defmodule AshTypst.Resource.Run do
   end
 
   defp inject_data(ctx, nil, arguments, opts) do
-    data = "#let args = #{AshTypst.Code.encode(Map.new(arguments))}\n"
+    data = "#let args = #{AshTypst.Code.encode(Map.new(arguments), %{})}\n"
     AshTypst.Context.set_virtual_file(ctx, opts[:data_file] || "data.typ", data)
   end
 
   defp inject_data(ctx, record, arguments, opts) when not is_list(record) do
     data =
-      "#let record = #{AshTypst.Code.encode(record)}\n" <>
-        "#let args = #{AshTypst.Code.encode(Map.new(arguments))}\n"
+      "#let record = #{AshTypst.Code.encode(record, %{})}\n" <>
+        "#let args = #{AshTypst.Code.encode(Map.new(arguments), %{})}\n"
 
     AshTypst.Context.set_virtual_file(ctx, opts[:data_file] || "data.typ", data)
   end
@@ -162,7 +160,7 @@ defmodule AshTypst.Resource.Run do
       batch_size: batch_size
     )
 
-    args_code = "#let args = #{AshTypst.Code.encode(Map.new(arguments))}\n"
+    args_code = "#let args = #{AshTypst.Code.encode(Map.new(arguments), %{})}\n"
     AshTypst.Context.append_virtual_file(ctx, data_file, args_code)
   end
 

@@ -462,7 +462,7 @@ defmodule AshTypst.ResourceTest do
       {:ok, markup} = File.read(Path.join(dir, "test.typ"))
       :ok = AshTypst.Context.set_markup(ctx, markup)
 
-      data = "#let args = #{AshTypst.Code.encode(%{title: "From File"})}\n"
+      data = "#let args = #{AshTypst.Code.encode(%{title: "From File"}, %{})}\n"
       :ok = AshTypst.Context.set_virtual_file(ctx, "data.typ", data)
 
       assert {:ok, %AshTypst.CompileResult{page_count: 1}} = AshTypst.Context.compile(ctx)

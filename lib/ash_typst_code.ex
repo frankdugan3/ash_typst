@@ -11,13 +11,13 @@ defprotocol AshTypst.Code do
       iex> AshTypst.Code.encode(~U[2015-01-13 13:00:07Z], %{timezone: "America/New_York"})
       "datetime(year: 2015, month: 1, day: 13, hour: 8, minute: 0, second: 7)"
 
-      iex> AshTypst.Code.encode(nil)
+      iex> AshTypst.Code.encode(nil, %{})
       "none"
 
-      iex> AshTypst.Code.encode(%{true: true, false: false, other: :other})
+      iex> AshTypst.Code.encode(%{true: true, false: false, other: :other}, %{})
       "(\\"false\\": false, \\"true\\": true, \\"other\\": \\"other\\")"
 
-      iex> AshTypst.Code.encode(["one", 2, 3.0])
+      iex> AshTypst.Code.encode(["one", 2, 3.0], %{})
       "(\\"one\\", int(2), float(3.0))"
 
   The following types are supported by default:
@@ -53,7 +53,7 @@ defprotocol AshTypst.Code do
 
   """
   @spec encode(any(), map()) :: String.t()
-  def encode(value, context \\ %{})
+  def encode(value, context)
 end
 
 defimpl AshTypst.Code, for: Any do
