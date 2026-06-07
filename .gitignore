@@ -22,6 +22,10 @@ erl_crash.dump
 # Ignore package tarball (built via "mix hex.build").
 typst-*.tar
 
+# rustler_precompiled checksum file: regenerated at publish time, shipped in the
+# Hex package via mix.exs `files:`, but not tracked in version control.
+checksum-*.exs
+
 # Temporary files, for example, from tests.
 /tmp/
 priv/native
