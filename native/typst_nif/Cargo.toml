@@ -10,7 +10,7 @@ path = "src/lib.rs"
 crate-type = ["cdylib"]
 
 [features]
-default = ["nif_version_2_15"]
+default = ["nif_version_2_17"]
 nif_version_2_15 = ["rustler/nif_version_2_15"]
 nif_version_2_16 = ["rustler/nif_version_2_16"]
 nif_version_2_17 = ["rustler/nif_version_2_17"]
@@ -21,7 +21,7 @@ ecow = "0.2"
 parking_lot = "0.12"
 rustler = { version = "0.38", default-features = false, features = ["derive"] }
 typst = "0.14"
-typst-kit = "0.14"
+typst-kit = { version = "0.14", features = ["vendor-openssl"] }
 typst-pdf = "0.14"
 typst-html = "0.14"
 typst-svg = "0.14"

@@ -7,7 +7,7 @@ defmodule AshTypst.NIF do
     base_url:
       "https://github.com/frankdugan3/ash_typst/releases/download/v#{Mix.Project.config()[:version]}",
     version: Mix.Project.config()[:version],
-    nif_versions: ["2.15"],
+    nif_versions: ["2.17"],
     targets: ~w(
       aarch64-apple-darwin
       aarch64-unknown-linux-gnu
