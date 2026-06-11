@@ -104,7 +104,11 @@ The `AshTypst.Code` protocol converts Elixir values into Typst source syntax:
 | `nil`                                          | `none`                        |
 | Ash resource                                   | `dictionary` of public fields |
 
-Implement `AshTypst.Code` for your own structs to control how they serialize.
+To encode an Ash resource's records (or any struct) you must opt it into the
+protocol by adding `@derive AshTypst.Code` to the module. Deriving uses the
+built-in implementation, which serializes a resource's public fields. For full
+control over how a struct serializes, implement the protocol directly with
+`defimpl AshTypst.Code, for: MyStruct`.
 
 ## Ash Resource Extension
 
@@ -117,6 +121,10 @@ defmodule MyApp.Invoice do
   use Ash.Resource,
     domain: MyApp.Domain,
     extensions: [AshTypst.Resource]
+
+  # Opt this resource into the encoding protocol so `read` results can be
+  # serialized to Typst and injected into your templates.
+  @derive AshTypst.Code
 
   typst do
     root "priv/typst"
@@ -166,7 +174,7 @@ Data is injected into a virtual file (`data.typ` by default) that your template 
 `records` (list), and/or `args` (action arguments).
 
 For the complete DSL reference, see the
-[AshTypst.Resource DSL cheatsheet](https://hexdocs.pm/ash_typst/dsl-AshTypst.Resource.html).
+[AshTypst.Resource DSL cheatsheet](https://hexdocs.pm/ash_typst/dsl-ashtypst-resource.html).
 
 ## Live editing
 

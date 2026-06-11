@@ -9,6 +9,7 @@ defmodule AshTypst.MixProject do
       app: :ash_typst,
       version: @version,
       elixir: "~> 1.20",
+      elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       description: "Precompiled NIFs and tooling to render Typst documents.",
       package: package(),
@@ -52,6 +53,9 @@ defmodule AshTypst.MixProject do
       ]
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   def cli do
     [

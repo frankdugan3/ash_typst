@@ -19,6 +19,10 @@ Add the extension to your resource:
         domain: MyApp.Domain,
         extensions: [AshTypst.Resource]
 
+      # Opt this resource into the encoding protocol so `read` results can be
+      # serialized to Typst and injected into your templates.
+      @derive AshTypst.Code
+
       typst do
         root "priv/typst"
 
@@ -84,6 +88,12 @@ template can `#import`:
 - **No read**: only `args` (a dictionary of action arguments) is available.
 - **Read `:one`**: both `record` (the single resource) and `args` are available.
 - **Read `:many`**: `records` (an array, streamed in batches) and `args` are available.
+
+Any render action that declares a `read` encodes the fetched resource records
+via the `AshTypst.Code` protocol, so the resource must opt in by adding
+`@derive AshTypst.Code` (see the usage example above). Deriving serializes the
+resource's public fields; for custom serialization, implement the protocol
+directly with `defimpl AshTypst.Code, for: MyApp.Invoice`.
 
 ## DSL Reference
 

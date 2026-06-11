@@ -40,6 +40,21 @@ defprotocol AshTypst.Code do
   - `Ash.NotLoaded` -> [`none`](https://typst.app/docs/reference/foundations/none/)
   - `Ash.CiString` -> [`str`](https://typst.app/docs/reference/foundations/str/)
 
+  Structs (including Ash resources) are not encoded unless they opt in. Add
+  `@derive AshTypst.Code` to the module to use the built-in implementation
+  (which serializes an Ash resource's public fields), or implement the protocol
+  directly with `defimpl AshTypst.Code, for: MyStruct` for full control:
+
+  ```elixir
+  defmodule MyApp.Invoice do
+    use Ash.Resource, domain: MyApp.Domain
+
+    @derive AshTypst.Code
+
+    # ...
+  end
+  ```
+
   Context must be passed through. This allows for things like dates to be formatted according to a given timezone, etc.
 
   If `timezone` is specified in the context, supported types will be automatically shifted to that zone. Ensure you install and configure your choice of timezone database in `config.exs`:
