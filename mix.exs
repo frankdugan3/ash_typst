@@ -101,6 +101,7 @@ defmodule AshTypst.MixProject do
       {:dialyxir, ">= 0.0.0", only: :test, runtime: false},
       {:doctor, ">= 0.0.0", only: :test, runtime: false},
       {:mix_audit, ">= 0.0.0", only: :test, runtime: false},
+      {:mix_watch_docs, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:tzdata, "~> 1.1", only: :test},
       {:mix_test_watch, "~> 1.2", only: :test},
       {:git_ops, "~> 2.7", only: :dev},
@@ -170,6 +171,7 @@ defmodule AshTypst.MixProject do
         "docs",
         "spark.replace_doc_links"
       ],
+      build: ["format.all", "docs"],
       "nif.checksum": ["rustler_precompiled.download AshTypst.NIF --all --print"],
       publish: ["nif.checksum", "hex.publish"]
     ]

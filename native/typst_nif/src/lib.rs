@@ -779,7 +779,9 @@ fn context_set_virtual_file_binary<'a>(
     content: Binary<'a>,
 ) -> Atom {
     let mut world = ctx.world.lock();
-    world.virtual_files.insert(path, content.as_slice().to_vec());
+    world
+        .virtual_files
+        .insert(path, content.as_slice().to_vec());
     *ctx.document.lock() = None;
     ok()
 }
