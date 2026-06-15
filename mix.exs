@@ -39,17 +39,7 @@ defmodule AshTypst.MixProject do
       before_closing_body_tag: &before_closing_body_tag/1,
       groups_for_modules: [
         Core: [AshTypst, AshTypst.Context],
-        "Data Encoding": [AshTypst.Code],
-        Structs: [
-          AshTypst.Context.Options,
-          AshTypst.PDFOptions,
-          AshTypst.CompileResult,
-          AshTypst.CompileError,
-          AshTypst.Diagnostic,
-          AshTypst.Span,
-          AshTypst.TraceItem,
-          AshTypst.FontOptions
-        ]
+        "Data Encoding": [AshTypst.Code]
       ]
     ]
   end
@@ -62,7 +52,6 @@ defmodule AshTypst.MixProject do
       preferred_envs: [
         check: :test,
         credo: :test,
-        dialyzer: :test,
         doctor: :test,
         "deps.audit": :test,
         "test.watch": :test
@@ -102,7 +91,6 @@ defmodule AshTypst.MixProject do
       {:ex_doc, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:ex_check, ">= 0.0.0", only: :test, runtime: false},
       {:credo, ">= 0.0.0", only: :test, runtime: false},
-      {:dialyxir, ">= 0.0.0", only: :test, runtime: false},
       {:doctor, ">= 0.0.0", only: :test, runtime: false},
       {:mix_audit, ">= 0.0.0", only: :test, runtime: false},
       {:mix_watch_docs, ">= 0.0.0", only: [:dev, :test], runtime: false},
@@ -175,7 +163,7 @@ defmodule AshTypst.MixProject do
         "docs",
         "spark.replace_doc_links"
       ],
-      build: ["format.all", "docs"],
+      build: ["compile --force", "format.all", "docs"],
       "nif.checksum": ["rustler_precompiled.download AshTypst.NIF --all --print"],
       publish: ["nif.checksum", "hex.publish"]
     ]

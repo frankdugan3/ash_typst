@@ -9,13 +9,6 @@ defmodule AshTypst.Resource.Render.PdfOptions do
   """
   defstruct [:pages, :document_id, pdf_standards: [], __spark_metadata__: nil]
 
-  @type t :: %__MODULE__{
-          pages: String.t() | nil,
-          pdf_standards: [:pdf_1_7 | :pdf_a_2b | :pdf_a_3b],
-          document_id: String.t() | nil,
-          __spark_metadata__: Spark.Dsl.Entity.spark_meta()
-        }
-
   @schema [
     pages: [
       type: :string,
@@ -33,6 +26,6 @@ defmodule AshTypst.Resource.Render.PdfOptions do
   ]
 
   @doc false
-  @spec schema() :: keyword()
+
   def schema, do: @schema
 end

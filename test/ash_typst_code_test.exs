@@ -14,7 +14,6 @@ defmodule AshTypst.CodeTest do
       encoded = AshTypst.Code.encode(record, %{})
 
       assert encoded =~ ~s("name": "Zardoz")
-      # Private fields are excluded.
       refute encoded =~ "p@ssw0rd"
     end
   end

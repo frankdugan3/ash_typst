@@ -14,7 +14,7 @@ defmodule AshTypst.Resource.Info do
   alias Spark.Dsl.Extension
 
   @doc "Returns all templates declared in the `typst` section."
-  @spec templates(Spark.Dsl.t() | module()) :: [Template.t()]
+
   def templates(resource) do
     resource
     |> Extension.get_entities([:typst])
@@ -22,7 +22,7 @@ defmodule AshTypst.Resource.Info do
   end
 
   @doc "Returns all render entities declared in the `typst` section."
-  @spec renders(Spark.Dsl.t() | module()) :: [Render.t()]
+
   def renders(resource) do
     resource
     |> Extension.get_entities([:typst])
@@ -30,8 +30,7 @@ defmodule AshTypst.Resource.Info do
   end
 
   @doc "Looks up a template by name. Returns `{:ok, template}` or `:error`."
-  @spec template(Spark.Dsl.t() | module(), atom()) ::
-          {:ok, AshTypst.Resource.Template.t()} | :error
+
   def template(resource, name) do
     case Enum.find(templates(resource), &(&1.name == name)) do
       nil -> :error
@@ -40,7 +39,7 @@ defmodule AshTypst.Resource.Info do
   end
 
   @doc "Looks up a template by name. Raises if not found."
-  @spec template!(Spark.Dsl.t() | module(), atom()) :: AshTypst.Resource.Template.t()
+
   def template!(resource, name) do
     case template(resource, name) do
       {:ok, template} ->

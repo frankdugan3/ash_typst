@@ -24,7 +24,7 @@ defmodule AshTypst.Resource.Errors.CompileError do
   def message(_), do: "Typst compilation failed"
 
   @doc false
-  @spec from(AshTypst.CompileError.t()) :: Exception.t()
+
   def from(%AshTypst.CompileError{diagnostics: diagnostics}) do
     %__MODULE__{diagnostics: diagnostics}
   end

@@ -20,7 +20,6 @@ defmodule AshTypst.Resource.Transformers.BuildActions do
   end
 
   defp build_action(entity) do
-    # With singleton_entity_keys, read and pdf_options are a single entity or nil
     read_entity = entity.read
     pdf_options_entity = entity.pdf_options
 

@@ -28,15 +28,13 @@ defmodule AshTypst.PathResolver do
       true
   """
 
-  @type path_spec :: String.t() | {atom(), String.t()}
-
   @doc """
   Returns an absolute (or as-given) path string.
 
     * String → returned as-is.
     * `{otp_app, sub_path}` → resolved via `Application.app_dir/2`.
   """
-  @spec resolve(path_spec()) :: String.t()
+
   def resolve(path) when is_binary(path), do: path
 
   def resolve({otp_app, sub_path}) when is_atom(otp_app) and is_binary(sub_path) do
@@ -46,6 +44,6 @@ defmodule AshTypst.PathResolver do
   @doc """
   Resolves a list of `t:path_spec/0` values.
   """
-  @spec resolve_all([path_spec()]) :: [String.t()]
+
   def resolve_all(paths) when is_list(paths), do: Enum.map(paths, &resolve/1)
 end

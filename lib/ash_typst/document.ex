@@ -7,11 +7,4 @@ defmodule AshTypst.Document do
   HTML string) and `format` indicates which export was used.
   """
   defstruct [:format, :data, :page_count, :warnings]
-
-  @type t :: %__MODULE__{
-          format: :pdf | :svg | :html,
-          data: binary(),
-          page_count: non_neg_integer(),
-          warnings: [AshTypst.Diagnostic.t()]
-        }
 end

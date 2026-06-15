@@ -13,14 +13,6 @@ defmodule AshTypst.Resource.Template do
   """
   defstruct [:name, :source, :markup, :inputs, __identifier__: nil, __spark_metadata__: nil]
 
-  @type t :: %__MODULE__{
-          name: atom(),
-          source: String.t() | nil,
-          markup: String.t() | nil,
-          inputs: %{String.t() => String.t()} | nil,
-          __spark_metadata__: Spark.Dsl.Entity.spark_meta()
-        }
-
   @schema [
     name: [
       type: :atom,
@@ -42,6 +34,6 @@ defmodule AshTypst.Resource.Template do
   ]
 
   @doc false
-  @spec schema() :: keyword()
+
   def schema, do: @schema
 end

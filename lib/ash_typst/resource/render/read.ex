@@ -21,18 +21,6 @@ defmodule AshTypst.Resource.Render.Read do
     __spark_metadata__: nil
   ]
 
-  @type t :: %__MODULE__{
-          cardinality: :one | :many,
-          filter: term(),
-          load: [atom() | keyword()],
-          select: [atom()] | nil,
-          sort: term(),
-          limit: non_neg_integer() | nil,
-          batch_size: pos_integer(),
-          not_found: :error | nil | nil,
-          __spark_metadata__: Spark.Dsl.Entity.spark_meta()
-        }
-
   @schema [
     cardinality: [
       type: {:one_of, [:one, :many]},
@@ -73,6 +61,6 @@ defmodule AshTypst.Resource.Render.Read do
   ]
 
   @doc false
-  @spec schema() :: keyword()
+
   def schema, do: @schema
 end

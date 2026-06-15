@@ -116,7 +116,7 @@ defmodule AshTypst do
   This is a standalone operation that does not require a context.
   For fonts loaded in a context, use `AshTypst.Context.font_families/1`.
   """
-  @spec font_families(AshTypst.FontOptions.t()) :: [String.t()]
+
   def font_families(%AshTypst.FontOptions{} = opts \\ %AshTypst.FontOptions{}) do
     AshTypst.NIF.font_families(opts)
   end

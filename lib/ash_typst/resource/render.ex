@@ -25,21 +25,6 @@ defmodule AshTypst.Resource.Render do
     __spark_metadata__: nil
   ]
 
-  @type t :: %__MODULE__{
-          name: atom(),
-          template: atom(),
-          format: :pdf | :svg | :html,
-          description: String.t() | nil,
-          page: non_neg_integer() | nil,
-          data_file: String.t(),
-          transaction?: boolean(),
-          arguments: [Ash.Resource.Actions.Argument.t()],
-          read: [AshTypst.Resource.Render.Read.t()],
-          pdf_options: [AshTypst.Resource.Render.PdfOptions.t()],
-          preparations: [Ash.Resource.Preparation.t()],
-          __spark_metadata__: Spark.Dsl.Entity.spark_meta()
-        }
-
   @schema [
     name: [
       type: :atom,
@@ -77,11 +62,11 @@ defmodule AshTypst.Resource.Render do
   ]
 
   @doc false
-  @spec schema() :: keyword()
+
   def schema, do: @schema
 
   @doc false
-  @spec transform(t()) :: {:ok, t()}
+
   def transform(render) do
     {:ok, render}
   end

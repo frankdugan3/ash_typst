@@ -23,8 +23,6 @@ defmodule AshTypst.Context do
 
   alias AshTypst.NIF
 
-  @type t :: reference()
-
   @doc """
   Create a new context.
 
@@ -36,7 +34,7 @@ defmodule AshTypst.Context do
     * `:font_paths` — additional font directories to search
     * `:ignore_system_fonts` — skip system fonts (default `false`)
   """
-  @spec new(keyword() | AshTypst.Context.Options.t()) :: {:ok, t()}
+
   def new(opts \\ [])
 
   def new(%AshTypst.Context.Options{} = opts) do
@@ -48,7 +46,7 @@ defmodule AshTypst.Context do
   end
 
   @doc "Set the main Typst markup. Invalidates any compiled document."
-  @spec set_markup(t(), String.t()) :: :ok
+
   def set_markup(ctx, markup) when is_binary(markup) do
     NIF.context_set_markup(ctx, markup)
   end
@@ -59,7 +57,7 @@ defmodule AshTypst.Context do
   Returns `{:ok, %CompileResult{}}` with the page count and warnings,
   or `{:error, %CompileError{}}` with diagnostics.
   """
-  @spec compile(t()) :: {:ok, AshTypst.CompileResult.t()} | {:error, AshTypst.CompileError.t()}
+
   def compile(ctx) do
     NIF.context_compile(ctx)
   end
@@ -71,7 +69,7 @@ defmodule AshTypst.Context do
 
     * `:page` — zero-indexed page number (default `0`)
   """
-  @spec render_svg(t(), keyword()) :: {:ok, String.t()} | {:error, AshTypst.CompileError.t()}
+
   def render_svg(ctx, opts \\ []) do
     page = Keyword.get(opts, :page, 0)
     NIF.context_render_svg(ctx, page)
@@ -86,8 +84,7 @@ defmodule AshTypst.Context do
     * `:pdf_standards` — list of standards, e.g. `[:pdf_a_2b]`
     * `:document_id` — stable identifier for caching
   """
-  @spec export_pdf(t(), keyword() | AshTypst.PDFOptions.t()) ::
-          {:ok, binary()} | {:error, AshTypst.CompileError.t()}
+
   def export_pdf(ctx, opts \\ [])
 
   def export_pdf(ctx, %AshTypst.PDFOptions{} = opts) do
@@ -99,13 +96,13 @@ defmodule AshTypst.Context do
   end
 
   @doc "List font families available in this context."
-  @spec font_families(t()) :: [String.t()]
+
   def font_families(ctx) do
     NIF.context_font_families(ctx)
   end
 
   @doc "Set (or overwrite) a virtual file with text content. Invalidates the compiled document."
-  @spec set_virtual_file(t(), String.t(), String.t()) :: :ok
+
   def set_virtual_file(ctx, path, content) when is_binary(path) and is_binary(content) do
     NIF.context_set_virtual_file(ctx, path, content)
   end
@@ -116,7 +113,7 @@ defmodule AshTypst.Context do
   Use this for non-text files like images (PNG, SVG) that Typst reads via
   `#image(read("name", encoding: none))`.
   """
-  @spec set_virtual_file_binary(t(), String.t(), binary()) :: :ok
+
   def set_virtual_file_binary(ctx, path, content) when is_binary(path) and is_binary(content) do
     NIF.context_set_virtual_file_binary(ctx, path, content)
   end
@@ -127,13 +124,13 @@ defmodule AshTypst.Context do
   Does **not** invalidate the compiled document — call `compile/1`
   after streaming is complete.
   """
-  @spec append_virtual_file(t(), String.t(), String.t()) :: :ok
+
   def append_virtual_file(ctx, path, chunk) when is_binary(path) and is_binary(chunk) do
     NIF.context_append_virtual_file(ctx, path, chunk)
   end
 
   @doc "Remove a virtual file. Invalidates the compiled document."
-  @spec clear_virtual_file(t(), String.t()) :: :ok
+
   def clear_virtual_file(ctx, path) when is_binary(path) do
     NIF.context_clear_virtual_file(ctx, path)
   end
@@ -150,7 +147,7 @@ defmodule AshTypst.Context do
     * `:context` — encoding context passed to `AshTypst.Code.encode/2`
     * `:batch_size` — records per NIF call (default `100`)
   """
-  @spec stream_virtual_file(t(), String.t(), Enumerable.t(), keyword()) :: :ok
+
   def stream_virtual_file(ctx, path, stream, opts \\ []) do
     variable_name = opts[:variable_name] || "data"
     context = opts[:context] || %{}
@@ -173,13 +170,13 @@ defmodule AshTypst.Context do
   end
 
   @doc "Set a single `sys.inputs` key/value pair."
-  @spec set_input(t(), String.t(), String.t()) :: :ok
+
   def set_input(ctx, key, value) when is_binary(key) and is_binary(value) do
     NIF.context_set_input(ctx, key, value)
   end
 
   @doc "Replace all `sys.inputs` with the given map of string keys/values."
-  @spec set_inputs(t(), %{String.t() => String.t()}) :: :ok
+
   def set_inputs(ctx, inputs) when is_map(inputs) do
     NIF.context_set_inputs(ctx, inputs)
   end
@@ -189,7 +186,7 @@ defmodule AshTypst.Context do
 
   Performs its own compilation (separate from `compile/1`).
   """
-  @spec export_html(t()) :: {:ok, String.t()} | {:error, AshTypst.CompileError.t()}
+
   def export_html(ctx) do
     NIF.context_export_html(ctx)
   end
