@@ -2,37 +2,31 @@ defmodule AshTypst.Resource.Transformers.ValidateCodeDerivation do
   @moduledoc false
   use Spark.Dsl.Transformer
 
-  alias AshTypst.Resource.Run
-  alias Spark.Dsl.Transformer
+  alias AshTypst.Resource.Info
+  alias Spark.Dsl.{Entity, Transformer}
   alias Spark.Error.DslError
-
-  @impl true
-  def after?(AshTypst.Resource.Transformers.BuildActions), do: true
-  def after?(_), do: false
 
   @impl true
   def transform(dsl_state) do
     module = Transformer.get_persisted(dsl_state, :module)
 
-    reading_action =
+    reading_render =
       dsl_state
-      |> Transformer.get_entities([:actions])
-      |> Enum.find(fn
-        %Ash.Resource.Actions.Action{run: {Run, opts}} -> not is_nil(opts[:read])
-        _ -> false
-      end)
+      |> Info.renders()
+      |> Enum.find(& &1.read)
 
-    if reading_action && not implements_code?(module) do
+    if reading_render && not implements_code?(module) do
       raise DslError,
         module: module,
         message:
-          "Action #{inspect(reading_action.name)} declares a `read`, so the fetched " <>
+          "Render #{inspect(reading_render.name)} declares a `read`, so the fetched " <>
             "records are encoded via the `AshTypst.Code` protocol, but #{inspect(module)} " <>
             "does not implement it.\n\n" <>
             "Add `@derive AshTypst.Code` to the resource to use the built-in implementation " <>
             "(which serializes the resource's public fields), or implement the protocol " <>
             "directly with `defimpl AshTypst.Code, for: #{inspect(module)}`.",
-        path: [:typst]
+        path: [:typst, reading_render.name, :read],
+        location: Entity.anno(reading_render.read) || Entity.anno(reading_render)
     end
 
     {:ok, dsl_state}

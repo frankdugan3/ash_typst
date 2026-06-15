@@ -16,7 +16,8 @@ defmodule AshTypst.Test.CodeDerive.Resource do
   """
   use Ash.Resource,
     domain: AshTypst.Test.CodeDerive.Domain,
-    data_layer: Ash.DataLayer.Ets
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshTypst.Resource]
 
   @derive AshTypst.Code
 
@@ -32,5 +33,22 @@ defmodule AshTypst.Test.CodeDerive.Resource do
 
   actions do
     defaults [:read, create: [:name, :secret]]
+  end
+
+  typst do
+    template :listing do
+      markup(~TYPST"""
+      #import "data.typ": record
+      = #record.name
+      """)
+    end
+
+    render :render_listing do
+      template(:listing)
+      format(:pdf)
+
+      read :one do
+      end
+    end
   end
 end

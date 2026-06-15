@@ -1,7 +1,7 @@
 defmodule AshTypst.ResourceTest do
   use ExUnit.Case, async: true
 
-  # --- Test Domain & Resources ---
+  import AshTypst.Test.DslError
 
   defmodule TestDomain do
     use Ash.Domain, validate_config_inclusion?: false
@@ -124,8 +124,6 @@ defmodule AshTypst.ResourceTest do
       end
     end
   end
-
-  # --- Tests ---
 
   describe "DSL compilation" do
     test "resource with inline template and render action compiles" do
@@ -361,89 +359,154 @@ defmodule AshTypst.ResourceTest do
     end
   end
 
-  describe "verifiers" do
+  describe "validation transformers" do
+    setup do
+      # Source annotations are only captured when `debug_info` is enabled, which
+      # is off by default in `.exs` files. Enabling it lets the DSL errors render
+      # the offending source location. See Spark's "Using Source Annotations".
+      debug_info? = Code.get_compiler_option(:debug_info)
+      Code.put_compiler_option(:debug_info, true)
+      on_exit(fn -> Code.put_compiler_option(:debug_info, debug_info?) end)
+      :ok
+    end
+
     test "ValidateTemplateRefs catches invalid template reference" do
-      warnings =
-        ExUnit.CaptureIO.capture_io(:stderr, fn ->
-          Code.compile_string("""
-          defmodule AshTypst.ResourceTest.BadTemplateRef do
-            use Ash.Resource,
-              domain: AshTypst.ResourceTest.TestDomain,
-              extensions: [AshTypst.Resource]
+      expected = """
+      [AshTypst.ResourceTest.BadTemplateRef]
+      typst -> bad_action -> template defined in <FILE:LINE>:
+        Render :bad_action references template :nonexistent but no template with that name is declared in the `typst` section. Declared templates: [:real]
+      │
+      <LINE> │               template :nonexistent
+      │               ~~~~~~~~~~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
 
-            typst do
-              template :real do
-                markup "= Real"
-              end
+      assert_dsl_error expected do
+        defmodule BadTemplateRef do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
 
-              render :bad_action do
-                template :nonexistent
-                format :pdf
-              end
+          typst do
+            template :real do
+              markup("= Real")
+            end
+
+            render :bad_action do
+              template :nonexistent
+              format(:pdf)
             end
           end
-          """)
-        end)
-
-      assert warnings =~ "no template with that name"
+        end
+      end
     end
 
     test "ValidateFormatOptions catches page with non-svg format" do
-      warnings =
-        ExUnit.CaptureIO.capture_io(:stderr, fn ->
-          Code.compile_string("""
-          defmodule AshTypst.ResourceTest.BadPageFormat do
-            use Ash.Resource,
-              domain: AshTypst.ResourceTest.TestDomain,
-              extensions: [AshTypst.Resource]
+      expected = """
+      [AshTypst.ResourceTest.BadPageFormat]
+      typst -> bad_page -> page defined in <FILE:LINE>:
+        Render :bad_page: `page` option is only valid when `format` is `:svg`, but format is :pdf.
+      │
+      <LINE> │               page 0
+      │               ~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
 
-            typst do
-              template :doc do
-                markup "= Test"
-              end
+      assert_dsl_error expected do
+        defmodule BadPageFormat do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
 
-              render :bad_page do
-                template :doc
-                format :pdf
-                page 0
-              end
+          typst do
+            template :doc do
+              markup("= Test")
+            end
+
+            render :bad_page do
+              template(:doc)
+              format(:pdf)
+              page 0
             end
           end
-          """)
-        end)
-
-      assert warnings =~ "`page` option is only valid"
+        end
+      end
     end
 
     test "ValidateFormatOptions catches pdf_options with non-pdf format" do
-      warnings =
-        ExUnit.CaptureIO.capture_io(:stderr, fn ->
-          Code.compile_string("""
-          defmodule AshTypst.ResourceTest.BadPdfOptions do
-            use Ash.Resource,
-              domain: AshTypst.ResourceTest.TestDomain,
-              extensions: [AshTypst.Resource]
+      expected = """
+      [AshTypst.ResourceTest.BadPdfOptions]
+      typst -> bad_pdf_opts -> pdf_options defined in <FILE:LINE>:
+        Render :bad_pdf_opts: `pdf_options` is only valid when `format` is `:pdf`, but format is :svg.
+      │
+      <LINE> │               pdf_options do
+      │               ~~~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
 
-            typst do
-              template :doc do
-                markup "= Test"
-              end
+      assert_dsl_error expected do
+        defmodule BadPdfOptions do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
 
-              render :bad_pdf_opts do
-                template :doc
-                format :svg
-                page 0
+          typst do
+            template :doc do
+              markup("= Test")
+            end
 
-                pdf_options do
-                  pdf_standards [:pdf_a_2b]
-                end
+            render :bad_pdf_opts do
+              template(:doc)
+              format(:svg)
+              page(0)
+
+              pdf_options do
+                pdf_standards([:pdf_a_2b])
               end
             end
           end
-          """)
-        end)
+        end
+      end
+    end
 
-      assert warnings =~ "`pdf_options` is only valid"
+    test "ValidateCodeDerivation catches a read without deriving AshTypst.Code" do
+      expected = """
+      [AshTypst.ResourceTest.MissingCodeDerive]
+      typst -> render_doc -> read defined in <FILE:LINE>:
+        Render :render_doc declares a `read`, so the fetched records are encoded via the `AshTypst.Code` protocol, but AshTypst.ResourceTest.MissingCodeDerive does not implement it.
+
+      Add `@derive AshTypst.Code` to the resource to use the built-in implementation (which serializes the resource's public fields), or implement the protocol directly with `defimpl AshTypst.Code, for: AshTypst.ResourceTest.MissingCodeDerive`.
+      │
+      <LINE> │               read :one do
+      │               ~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
+
+      assert_dsl_error expected do
+        defmodule MissingCodeDerive do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          typst do
+            template :doc do
+              markup("= Test")
+            end
+
+            render :render_doc do
+              template(:doc)
+              format(:pdf)
+
+              read :one do
+              end
+            end
+          end
+        end
+      end
     end
   end
 

@@ -1,6 +1,8 @@
 defmodule AshTypst.SigilTest do
   use ExUnit.Case, async: true
 
+  doctest AshTypst.Sigil
+
   import AshTypst.Sigil
 
   describe "~TYPST sigil" do

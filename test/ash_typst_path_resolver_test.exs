@@ -1,6 +1,8 @@
 defmodule AshTypst.PathResolverTest do
   use ExUnit.Case, async: true
 
+  doctest AshTypst.PathResolver
+
   alias AshTypst.PathResolver
 
   describe "resolve/1" do

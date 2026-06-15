@@ -223,10 +223,9 @@ defmodule AshTypst.Resource do
   use Spark.Dsl.Extension,
     sections: [@typst_section],
     transformers: [
-      AshTypst.Resource.Transformers.BuildActions
-    ],
-    verifiers: [
-      AshTypst.Resource.Verifiers.ValidateTemplateRefs,
-      AshTypst.Resource.Verifiers.ValidateFormatOptions
+      AshTypst.Resource.Transformers.BuildActions,
+      AshTypst.Resource.Transformers.ValidateTemplateRefs,
+      AshTypst.Resource.Transformers.ValidateFormatOptions,
+      AshTypst.Resource.Transformers.ValidateCodeDerivation
     ]
 end
