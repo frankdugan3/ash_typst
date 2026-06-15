@@ -5,6 +5,13 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.3.0](https://github.com/frankdugan3/ash_typst/compare/v0.2.0...v0.3.0) (2026-06-15)
+### Breaking Changes:
+
+* upgrade to Typst 0.15 by Frank Polasek Dugan III
+
+
+
 ## [v0.2.0](https://github.com/frankdugan3/ash_typst/compare/v0.1.1-rc.1...v0.2.0) (2026-06-07)
 
 ### Features:
