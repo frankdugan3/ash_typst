@@ -17,12 +17,19 @@ nif_version_2_17 = ["rustler/nif_version_2_17"]
 
 [dependencies]
 chrono = "0.4"
-ecow = "0.2"
 parking_lot = "0.12"
 rustler = { version = "0.38", default-features = false, features = ["derive"] }
-typst = "0.14"
-typst-kit = { version = "0.14", features = ["vendor-openssl"] }
-typst-pdf = "0.14"
-typst-html = "0.14"
-typst-svg = "0.14"
-typst-timing = "0.14"
+typst = "0.15"
+typst-layout = "0.15"
+typst-kit = { version = "0.15", default-features = false, features = [
+    "embedded-fonts",
+    "scan-fonts",
+    "system-packages",
+    "system-downloader",
+    "vendor-openssl",
+] }
+typst-pdf = "0.15"
+typst-html = "0.15"
+typst-svg = "0.15"
+typst-timing = "0.15"
+typst-bundle = "0.15"

@@ -30,7 +30,7 @@ Add `ash_typst` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ash_typst, "~> 0.0.1"}
+    {:ash_typst, "~> 0.3"}
   ]
 end
 ```

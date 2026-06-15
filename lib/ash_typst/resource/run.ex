@@ -16,10 +16,17 @@ defmodule AshTypst.Resource.Run do
          :ok <- set_template(ctx, template, resource),
          :ok <- set_inputs(ctx, template),
          :ok <- inject_data(ctx, data, input.arguments, opts),
-         {:ok, compile_result} <- compile(ctx) do
+         {:ok, compile_result} <- maybe_compile(ctx, opts[:format]) do
       export(ctx, opts[:format], opts, compile_result)
     end
   end
+
+  # The bundle target uses `document`/`asset` elements that are invalid in the
+  # paged target, and `export_bundle/2` compiles on its own (surfacing its own
+  # warnings) — so skip the paged pre-compile for bundles.
+  defp maybe_compile(_ctx, :bundle), do: {:ok, nil}
+
+  defp maybe_compile(ctx, _format), do: compile(ctx)
 
   defp fetch_data(_resource, _input, opts, _context) when not is_map_key(opts, :read) do
     {:ok, nil}
@@ -199,7 +206,13 @@ defmodule AshTypst.Resource.Run do
   end
 
   defp export(ctx, :svg, opts, compile_result) do
-    with {:ok, data} <- AshTypst.Context.render_svg(ctx, page: opts[:page] || 0) do
+    svg_opts = [
+      page: opts[:page] || 0,
+      pretty: opts[:pretty] || false,
+      render_bleed: opts[:render_bleed] || false
+    ]
+
+    with {:ok, data} <- AshTypst.Context.render_svg(ctx, svg_opts) do
       {:ok,
        %AshTypst.Document{
          format: :svg,
@@ -210,14 +223,32 @@ defmodule AshTypst.Resource.Run do
     end
   end
 
-  defp export(ctx, :html, _opts, compile_result) do
-    with {:ok, data} <- AshTypst.Context.export_html(ctx) do
+  defp export(ctx, :html, opts, compile_result) do
+    with {:ok, data} <- AshTypst.Context.export_html(ctx, pretty: opts[:pretty] || false) do
       {:ok,
        %AshTypst.Document{
          format: :html,
          data: data,
          page_count: compile_result.page_count,
          warnings: compile_result.warnings
+       }}
+    end
+  end
+
+  defp export(ctx, :bundle, opts, _compile_result) do
+    bundle_opts = [
+      pretty: opts[:pretty] || false,
+      render_bleed: opts[:render_bleed] || false
+    ]
+
+    with {:ok, %AshTypst.BundleResult{files: files, warnings: warnings}} <-
+           AshTypst.Context.export_bundle(ctx, bundle_opts) do
+      {:ok,
+       %AshTypst.Document{
+         format: :bundle,
+         data: files,
+         page_count: nil,
+         warnings: warnings
        }}
     end
   end

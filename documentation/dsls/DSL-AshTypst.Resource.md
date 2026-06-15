@@ -187,9 +187,11 @@ Declares a Typst template rendering action.
 | Name | Type | Default | Docs |
 |------|------|---------|------|
 | [`template`](#typst-render-template){: #typst-render-template .spark-required} | `atom` |  | Reference to a template declared in the `typst` section. |
-| [`format`](#typst-render-format){: #typst-render-format .spark-required} | `:pdf \| :svg \| :html` |  | Output export format. |
+| [`format`](#typst-render-format){: #typst-render-format .spark-required} | `:pdf \| :svg \| :html \| :bundle` |  | Output export format. |
 | [`description`](#typst-render-description){: #typst-render-description } | `String.t` |  | Action description. |
 | [`page`](#typst-render-page){: #typst-render-page } | `non_neg_integer` |  | Page index for SVG rendering. |
+| [`pretty`](#typst-render-pretty){: #typst-render-pretty } | `boolean` | `false` | Format HTML/SVG output (also within bundles) in a human-readable way. |
+| [`render_bleed`](#typst-render-render_bleed){: #typst-render-render_bleed } | `boolean` | `false` | Include bleed margins for SVG output (also within bundles). |
 | [`data_file`](#typst-render-data_file){: #typst-render-data_file } | `String.t` | `"data.typ"` | Virtual file path for serialized data. |
 | [`transaction?`](#typst-render-transaction?){: #typst-render-transaction? } | `boolean` | `false` | Wrap action execution in a transaction. |
 

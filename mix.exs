@@ -40,11 +40,20 @@ defmodule AshTypst.MixProject do
       groups_for_modules: [
         Core: [
           AshTypst,
+          AshTypst.Code,
           AshTypst.Context,
           AshTypst.Sigil,
           AshTypst.PathResolver,
           AshTypst.Document,
           AshTypst.Type.Document
+        ],
+        "Results & Diagnostics": [
+          AshTypst.CompileResult,
+          AshTypst.BundleResult,
+          AshTypst.CompileError,
+          AshTypst.Diagnostic,
+          AshTypst.Span,
+          AshTypst.TraceItem
         ],
         Resource: [
           AshTypst.Resource,
@@ -53,8 +62,7 @@ defmodule AshTypst.MixProject do
           AshTypst.Resource.Render.Read,
           AshTypst.Resource.Render.PdfOptions,
           AshTypst.Resource.Template
-        ],
-        "Data Encoding": [AshTypst.Code]
+        ]
       ]
     ]
   end

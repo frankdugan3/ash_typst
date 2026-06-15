@@ -24,7 +24,7 @@ defmodule AshTypst.NIF do
   def context_new(_opts), do: :erlang.nif_error(:not_loaded)
   def context_set_markup(_ctx, _markup), do: :erlang.nif_error(:not_loaded)
   def context_compile(_ctx), do: :erlang.nif_error(:not_loaded)
-  def context_render_svg(_ctx, _page), do: :erlang.nif_error(:not_loaded)
+  def context_render_svg(_ctx, _page, _pretty, _render_bleed), do: :erlang.nif_error(:not_loaded)
   def context_export_pdf(_ctx, _opts), do: :erlang.nif_error(:not_loaded)
   def context_font_families(_ctx), do: :erlang.nif_error(:not_loaded)
   def context_set_virtual_file(_ctx, _path, _content), do: :erlang.nif_error(:not_loaded)
@@ -33,6 +33,7 @@ defmodule AshTypst.NIF do
   def context_clear_virtual_file(_ctx, _path), do: :erlang.nif_error(:not_loaded)
   def context_set_input(_ctx, _key, _value), do: :erlang.nif_error(:not_loaded)
   def context_set_inputs(_ctx, _inputs), do: :erlang.nif_error(:not_loaded)
-  def context_export_html(_ctx), do: :erlang.nif_error(:not_loaded)
+  def context_export_html(_ctx, _pretty), do: :erlang.nif_error(:not_loaded)
+  def context_export_bundle(_ctx, _opts), do: :erlang.nif_error(:not_loaded)
   def font_families(_opts), do: :erlang.nif_error(:not_loaded)
 end

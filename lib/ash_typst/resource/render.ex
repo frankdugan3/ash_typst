@@ -3,9 +3,9 @@ defmodule AshTypst.Resource.Render do
   Struct and schema for the `render` entity in the `typst` DSL section.
 
   A render entity declares an action that compiles a template and exports it in
-  the specified format (`:pdf`, `:svg`, or `:html`). It can include arguments,
-  a `read` sub-entity to fetch resource data, `pdf_options` for PDF-specific
-  settings, and preparations/validations.
+  the specified format (`:pdf`, `:svg`, `:html`, or `:bundle`). It can include
+  arguments, a `read` sub-entity to fetch resource data, `pdf_options` for
+  PDF-specific settings, and preparations/validations.
 
   For the full DSL reference, see `d:AshTypst.Resource.typst.render`.
   """
@@ -15,6 +15,8 @@ defmodule AshTypst.Resource.Render do
     :format,
     :description,
     :page,
+    pretty: false,
+    render_bleed: false,
     data_file: "data.typ",
     transaction?: false,
     arguments: [],
@@ -37,7 +39,7 @@ defmodule AshTypst.Resource.Render do
       doc: "Reference to a template declared in the `typst` section."
     ],
     format: [
-      type: {:one_of, [:pdf, :svg, :html]},
+      type: {:one_of, [:pdf, :svg, :html, :bundle]},
       required: true,
       doc: "Output export format."
     ],
@@ -48,6 +50,16 @@ defmodule AshTypst.Resource.Render do
     page: [
       type: :non_neg_integer,
       doc: "Page index for SVG rendering."
+    ],
+    pretty: [
+      type: :boolean,
+      default: false,
+      doc: "Format HTML/SVG output (also within bundles) in a human-readable way."
+    ],
+    render_bleed: [
+      type: :boolean,
+      default: false,
+      doc: "Include bleed margins for SVG output (also within bundles)."
     ],
     data_file: [
       type: :string,

@@ -277,6 +277,32 @@ defmodule AshTypst.ContextTest do
     end
   end
 
+  describe "render_svg options" do
+    test "pretty: true produces human-readable (multi-line) SVG" do
+      {:ok, ctx} = Context.new()
+      :ok = Context.set_markup(ctx, @test_markup)
+      {:ok, _} = Context.compile(ctx)
+
+      {:ok, minified} = Context.render_svg(ctx)
+      {:ok, pretty} = Context.render_svg(ctx, pretty: true)
+
+      assert String.contains?(pretty, "<svg")
+      assert lines(pretty) > lines(minified)
+    end
+
+    test "render_bleed: true changes output when the page declares bleed" do
+      {:ok, ctx} = Context.new()
+      :ok = Context.set_markup(ctx, "#set page(bleed: 5mm)\n= Bleed")
+      {:ok, _} = Context.compile(ctx)
+
+      {:ok, without_bleed} = Context.render_svg(ctx)
+      {:ok, with_bleed} = Context.render_svg(ctx, render_bleed: true)
+
+      assert String.contains?(with_bleed, "<svg")
+      assert with_bleed != without_bleed
+    end
+  end
+
   describe "export_html" do
     test "returns HTML string" do
       {:ok, ctx} = Context.new()
@@ -294,5 +320,71 @@ defmodule AshTypst.ContextTest do
       assert {:ok, html} = Context.export_html(ctx)
       assert is_binary(html)
     end
+
+    test "pretty: true produces human-readable (multi-line) HTML" do
+      {:ok, ctx} = Context.new()
+      Context.set_markup(ctx, "= Hello HTML\n\nA paragraph of text.")
+
+      {:ok, minified} = Context.export_html(ctx)
+      {:ok, pretty} = Context.export_html(ctx, pretty: true)
+
+      assert String.contains?(pretty, "<html")
+      assert lines(pretty) > lines(minified)
+    end
   end
+
+  describe "export_bundle" do
+    @bundle_markup ~S|#document("index.html", title: [Home])[
+      = Home
+      See the #link("about.html")[about page].
+    ]
+    #document("about.html", title: [About])[= About]
+    #asset("notes.txt", bytes("plain asset"))|
+
+    test "returns files and warnings" do
+      {:ok, ctx} = Context.new()
+      :ok = Context.set_markup(ctx, @bundle_markup)
+
+      assert {:ok, %AshTypst.BundleResult{files: files, warnings: warnings}} =
+               Context.export_bundle(ctx)
+
+      assert Enum.sort(Map.keys(files)) == ["about.html", "index.html", "notes.txt"]
+      assert String.contains?(files["index.html"], "<html")
+      assert files["notes.txt"] == "plain asset"
+      assert is_list(warnings)
+    end
+
+    test "surfaces compilation warnings" do
+      {:ok, ctx} = Context.new()
+
+      :ok =
+        Context.set_markup(
+          ctx,
+          ~S|#document("index.html")[Value: #decimal(3.14)]|
+        )
+
+      assert {:ok, %AshTypst.BundleResult{warnings: [%AshTypst.Diagnostic{} | _]}} =
+               Context.export_bundle(ctx)
+    end
+
+    test "pretty: true produces human-readable HTML documents" do
+      {:ok, ctx} = Context.new()
+      :ok = Context.set_markup(ctx, @bundle_markup)
+
+      {:ok, %{files: minified}} = Context.export_bundle(ctx)
+      {:ok, %{files: pretty}} = Context.export_bundle(ctx, pretty: true)
+
+      assert lines(pretty["index.html"]) > lines(minified["index.html"])
+    end
+
+    test "returns a compile error for invalid bundle markup" do
+      {:ok, ctx} = Context.new()
+      :ok = Context.set_markup(ctx, @invalid_markup)
+
+      assert {:error, %AshTypst.CompileError{diagnostics: [_ | _]}} =
+               Context.export_bundle(ctx)
+    end
+  end
+
+  defp lines(string), do: string |> String.split("\n") |> length()
 end

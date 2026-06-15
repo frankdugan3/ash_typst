@@ -1,9 +1,7 @@
 use chrono::{DateTime, Datelike, FixedOffset, Local, Utc};
-use ecow::EcoVec;
 use parking_lot::Mutex;
 use rustler::{Atom, Binary, Decoder, Encoder, Env, NewBinary, NifStruct, ResourceArc, Term};
 use std::collections::HashMap;
-use std::fmt::Display;
 use std::num::NonZeroUsize;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::path::{Path, PathBuf};
@@ -11,22 +9,30 @@ use std::sync::LazyLock;
 use std::sync::OnceLock;
 use std::{fs, mem};
 use typst::diag::{FileError, FileResult, Severity, SourceDiagnostic};
-use typst::foundations::{Bytes, Datetime, Dict, Smart, Str, Value};
+use typst::ecow::EcoVec;
+use typst::foundations::{Bytes, Datetime, Dict, Duration, Smart, Str, Value};
 use typst::layout::PageRanges;
-use typst::layout::PagedDocument;
-use typst::syntax::{FileId, Source, VirtualPath};
+use typst::syntax::{DiagSpan, FileId, RootedPath, Source, VirtualPath, VirtualRoot};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
-use typst::{Feature, Features, Library, LibraryExt, World};
-use typst_html::HtmlDocument;
-use typst_kit::download::{DownloadState, Downloader, Progress};
-use typst_kit::fonts::{FontSlot, Fonts};
-use typst_kit::package::PackageStorage;
+use typst::{Feature, Features, Library, LibraryExt, World, WorldExt};
+use typst_bundle::{export as export_bundle, Bundle, BundleOptions};
+use typst_html::{HtmlDocument, HtmlOptions};
+use typst_kit::downloader::SystemDownloader;
+use typst_kit::files::FsRoot;
+use typst_kit::fonts::{embedded, scan, system, FontStore};
+use typst_kit::packages::SystemPackages;
+use typst_layout::PagedDocument;
 use typst_pdf::{PdfOptions, PdfStandard, PdfStandards};
+use typst_svg::SvgOptions;
 use typst_timing::{timed, TimingScope};
 
-static MARKUP_ID: LazyLock<FileId> =
-    LazyLock::new(|| FileId::new_fake(VirtualPath::new("MARKUP.typ")));
+static MARKUP_ID: LazyLock<FileId> = LazyLock::new(|| {
+    FileId::unique(RootedPath::new(
+        VirtualRoot::Project,
+        VirtualPath::new("MARKUP.typ").unwrap(),
+    ))
+});
 
 /// Stack size for Typst compilation threads (64 MB).
 ///
@@ -38,6 +44,12 @@ static MARKUP_ID: LazyLock<FileId> =
 /// Spawning compilation on a dedicated thread with a large stack pushes the
 /// overflow threshold to ~800+ levels, far beyond any realistic document.
 const COMPILE_STACK_SIZE: usize = 64 * 1024 * 1024;
+
+/// Compiler features enabled for every compilation: HTML export and the
+/// multi-file `bundle` export target.
+fn enabled_features() -> Features {
+    Features::from_iter([Feature::Html, Feature::Bundle])
+}
 
 rustler::atoms! {
     ok,
@@ -62,6 +74,20 @@ pub struct PdfOptionsNif {
     pub pages: Option<String>,
     pub pdf_standards: Vec<PdfStandardNif>,
     pub document_id: Option<String>,
+}
+
+#[derive(NifStruct)]
+#[module = "AshTypst.BundleOptions"]
+pub struct BundleOptionsNif {
+    pub pretty: bool,
+    pub render_bleed: bool,
+}
+
+#[derive(NifStruct)]
+#[module = "AshTypst.BundleResult"]
+pub struct BundleResultNif<'a> {
+    pub files: HashMap<String, Binary<'a>>,
+    pub warnings: Vec<DiagnosticNif>,
 }
 
 #[derive(NifStruct)]
@@ -190,18 +216,18 @@ impl From<PdfStandardNif> for PdfStandard {
 }
 
 impl PdfOptionsNif {
-    fn to_pdf_options(&self) -> Result<PdfOptions<'_>, String> {
+    fn to_pdf_options(&self) -> Result<PdfOptions, String> {
         let mut opts = PdfOptions::default();
 
         if let Some(ref document_id) = self.document_id {
-            opts.ident = Smart::Custom(document_id.as_str());
+            opts.ident = Smart::Custom(document_id.clone());
         }
 
         if !self.pdf_standards.is_empty() {
             let standards: Vec<PdfStandard> =
                 self.pdf_standards.iter().map(|&s| s.into()).collect();
             opts.standards = PdfStandards::new(&standards)
-                .map_err(|e| format!("Invalid PDF standards: {}", e))?;
+                .map_err(|e| format!("Invalid PDF standards: {}", e.message()))?;
         }
 
         Ok(opts)
@@ -213,10 +239,9 @@ pub struct SystemWorld {
     main: FileId,
     markup: String,
     library: LazyHash<Library>,
-    book: LazyHash<FontBook>,
-    fonts: Vec<FontSlot>,
+    fonts: FontStore,
     slots: Mutex<HashMap<FileId, FileSlot>>,
-    package_storage: PackageStorage,
+    packages: SystemPackages,
     now: Now,
     virtual_files: HashMap<String, Vec<u8>>,
     inputs: HashMap<String, String>,
@@ -231,30 +256,24 @@ impl SystemWorld {
 
         let include_system_fonts = !ignore_system_fonts;
 
-        let fonts = if filtered_paths.is_empty() {
-            Fonts::searcher()
-                .include_system_fonts(include_system_fonts)
-                .search()
-        } else {
-            Fonts::searcher()
-                .include_system_fonts(include_system_fonts)
-                .search_with(filtered_paths)
-        };
+        let mut fonts = FontStore::new();
+        for path in &filtered_paths {
+            fonts.extend(scan(path));
+        }
+        if include_system_fonts {
+            fonts.extend(system());
+        }
+        fonts.extend(embedded());
 
         let user_agent = concat!("typst/", env!("CARGO_PKG_VERSION"));
         Self {
             root,
             main: *MARKUP_ID,
             markup: String::new(),
-            library: LazyHash::new(
-                Library::builder()
-                    .with_features(Features::from_iter([Feature::Html]))
-                    .build(),
-            ),
-            book: LazyHash::new(fonts.book),
-            fonts: fonts.fonts,
+            library: LazyHash::new(Library::builder().with_features(enabled_features()).build()),
+            fonts,
             slots: Mutex::new(HashMap::new()),
-            package_storage: PackageStorage::new(None, None, Downloader::new(user_agent)),
+            packages: SystemPackages::new(SystemDownloader::new(user_agent)),
             now: Now::System(OnceLock::new()),
             virtual_files: HashMap::new(),
             inputs: HashMap::new(),
@@ -281,7 +300,7 @@ impl SystemWorld {
         self.library = LazyHash::new(
             Library::builder()
                 .with_inputs(dict)
-                .with_features(Features::from_iter([Feature::Html]))
+                .with_features(enabled_features())
                 .build(),
         );
     }
@@ -293,7 +312,7 @@ impl World for SystemWorld {
     }
 
     fn book(&self) -> &LazyHash<FontBook> {
-        &self.book
+        self.fonts.book()
     }
 
     fn main(&self) -> FileId {
@@ -305,31 +324,27 @@ impl World for SystemWorld {
             return Ok(Source::new(id, self.markup.clone()));
         }
 
-        if let Some(path) = id.vpath().as_rootless_path().to_str() {
-            if let Some(content) = self.virtual_files.get(path) {
-                let text = decode_utf8(content)?;
-                return Ok(Source::new(id, text.into()));
-            }
+        if let Some(content) = self.virtual_files.get(id.vpath().get_without_slash()) {
+            let text = decode_utf8(content)?;
+            return Ok(Source::new(id, text.into()));
         }
 
-        self.slot(id, |slot| slot.source(&self.root, &self.package_storage))
+        self.slot(id, |slot| slot.source(&self.root, &self.packages))
     }
 
     fn file(&self, id: FileId) -> FileResult<Bytes> {
-        if let Some(path) = id.vpath().as_rootless_path().to_str() {
-            if let Some(content) = self.virtual_files.get(path) {
-                return Ok(Bytes::new(content.clone()));
-            }
+        if let Some(content) = self.virtual_files.get(id.vpath().get_without_slash()) {
+            return Ok(Bytes::new(content.clone()));
         }
 
-        self.slot(id, |slot| slot.file(&self.root, &self.package_storage))
+        self.slot(id, |slot| slot.file(&self.root, &self.packages))
     }
 
     fn font(&self, index: usize) -> Option<Font> {
-        self.fonts.get(index)?.get()
+        self.fonts.font(index)
     }
 
-    fn today(&self, offset: Option<i64>) -> Option<Datetime> {
+    fn today(&self, offset: Option<Duration>) -> Option<Datetime> {
         let now = match &self.now {
             Now::Fixed(time) => time,
             Now::System(time) => time.get_or_init(Utc::now),
@@ -337,8 +352,8 @@ impl World for SystemWorld {
 
         let with_offset = match offset {
             None => now.with_timezone(&Local).fixed_offset(),
-            Some(hours) => {
-                let seconds = i32::try_from(hours).ok()?.checked_mul(3600)?;
+            Some(duration) => {
+                let seconds = i32::try_from(duration.seconds() as i64).ok()?;
                 now.with_timezone(&FixedOffset::east_opt(seconds)?)
             }
         };
@@ -381,13 +396,9 @@ impl FileSlot {
         self.file.reset();
     }
 
-    fn source(
-        &mut self,
-        project_root: &Path,
-        package_storage: &PackageStorage,
-    ) -> FileResult<Source> {
+    fn source(&mut self, project_root: &Path, packages: &SystemPackages) -> FileResult<Source> {
         self.source.get_or_init(
-            || read(self.id, project_root, package_storage),
+            || read(self.id, project_root, packages),
             |data, prev| {
                 let name = if prev.is_some() {
                     "reparsing file"
@@ -406,9 +417,9 @@ impl FileSlot {
         )
     }
 
-    fn file(&mut self, project_root: &Path, package_storage: &PackageStorage) -> FileResult<Bytes> {
+    fn file(&mut self, project_root: &Path, packages: &SystemPackages) -> FileResult<Bytes> {
         self.file.get_or_init(
-            || read(self.id, project_root, package_storage),
+            || read(self.id, project_root, packages),
             |data, _| Ok(Bytes::new(data)),
         )
     }
@@ -461,31 +472,17 @@ impl<T: Clone> SlotCell<T> {
     }
 }
 
-pub struct SilentDownloadProgress<T>(pub T);
+fn system_path(project_root: &Path, id: FileId, packages: &SystemPackages) -> FileResult<PathBuf> {
+    let root = match id.root() {
+        VirtualRoot::Package(spec) => packages.obtain(spec)?,
+        VirtualRoot::Project => FsRoot::new(project_root.to_path_buf()),
+    };
 
-impl<T: Display> Progress for SilentDownloadProgress<T> {
-    fn print_start(&mut self) {}
-    fn print_progress(&mut self, _state: &DownloadState) {}
-    fn print_finish(&mut self, _state: &DownloadState) {}
+    root.resolve(id.vpath())
 }
 
-fn system_path(
-    project_root: &Path,
-    id: FileId,
-    package_storage: &PackageStorage,
-) -> FileResult<PathBuf> {
-    let buf;
-    let mut root = project_root;
-    if let Some(spec) = id.package() {
-        buf = package_storage.prepare_package(spec, &mut SilentDownloadProgress(&spec))?;
-        root = &buf;
-    }
-
-    id.vpath().resolve(root).ok_or(FileError::AccessDenied)
-}
-
-fn read(id: FileId, project_root: &Path, package_storage: &PackageStorage) -> FileResult<Vec<u8>> {
-    read_from_disk(&system_path(project_root, id, package_storage)?)
+fn read(id: FileId, project_root: &Path, packages: &SystemPackages) -> FileResult<Vec<u8>> {
+    read_from_disk(&system_path(project_root, id, packages)?)
 }
 
 fn read_from_disk(path: &Path) -> FileResult<Vec<u8>> {
@@ -520,40 +517,22 @@ impl RefUnwindSafe for TypstContext {}
 #[rustler::resource_impl]
 impl rustler::Resource for TypstContext {}
 
-fn resolve_line_column(
-    span: typst::syntax::Span,
-    byte_offset: usize,
-    world: &SystemWorld,
-) -> (Option<usize>, Option<usize>) {
-    span.id()
+fn span_to_nif(span: impl Into<DiagSpan>, world: &SystemWorld) -> Option<SpanNif> {
+    let span = span.into();
+    let range = world.range(span)?;
+
+    let (line, column) = span
+        .id()
         .and_then(|id| world.source(id).ok())
-        .map(|source| {
-            let lines = source.lines();
-            let line = lines.byte_to_line(byte_offset).map(|l| l + 1);
-            let column = lines.byte_to_column(byte_offset).map(|c| c + 1);
-            (line, column)
-        })
-        .unwrap_or((None, None))
-}
+        .and_then(|source| source.lines().byte_to_line_column(range.start))
+        .map(|(line, column)| (Some(line + 1), Some(column + 1)))
+        .unwrap_or((None, None));
 
-fn span_to_nif(span: typst::syntax::Span, world: &SystemWorld) -> Option<SpanNif> {
-    span.range().map(|range| {
-        let (line, column) = resolve_line_column(span, range.start, world);
-        SpanNif {
-            start: range.start,
-            end: range.end,
-            line,
-            column,
-        }
-    })
-}
-
-fn span_to_nif_simple(span: typst::syntax::Span) -> Option<SpanNif> {
-    span.range().map(|range| SpanNif {
+    Some(SpanNif {
         start: range.start,
         end: range.end,
-        line: None,
-        column: None,
+        line,
+        column,
     })
 }
 
@@ -570,7 +549,7 @@ fn diagnostic_to_nif(d: &SourceDiagnostic, world: &SystemWorld) -> DiagnosticNif
                 message: item.v.to_string(),
             })
             .collect(),
-        hints: d.hints.iter().map(|h| h.to_string()).collect(),
+        hints: d.hints.iter().map(|h| h.v.to_string()).collect(),
     }
 }
 
@@ -581,26 +560,6 @@ fn diagnostics_to_vec(
     diagnostics
         .iter()
         .map(|d| diagnostic_to_nif(d, world))
-        .collect()
-}
-
-fn diagnostics_to_vec_simple(diagnostics: EcoVec<SourceDiagnostic>) -> Vec<DiagnosticNif> {
-    diagnostics
-        .iter()
-        .map(|d| DiagnosticNif {
-            severity: d.severity.into(),
-            message: d.message.to_string(),
-            span: span_to_nif_simple(d.span),
-            trace: d
-                .trace
-                .iter()
-                .map(|item| TraceItemNif {
-                    span: span_to_nif_simple(item.span),
-                    message: item.v.to_string(),
-                })
-                .collect(),
-            hints: d.hints.iter().map(|h| h.to_string()).collect(),
-        })
         .collect()
 }
 
@@ -686,8 +645,8 @@ fn context_compile(ctx: ResourceArc<TypstContext>) -> Result<CompileResultNif, C
             let result = typst::compile::<PagedDocument>(&*world_guard);
             match result.output {
                 Ok(document) => {
-                    let page_count = document.pages.len();
-                    let warnings = diagnostics_to_vec(result.warnings, &*world_guard);
+                    let page_count = document.pages().len();
+                    let warnings = diagnostics_to_vec(result.warnings, &world_guard);
                     *ctx.document.lock() = Some(document);
                     Ok(CompileResultNif {
                         page_count,
@@ -695,7 +654,7 @@ fn context_compile(ctx: ResourceArc<TypstContext>) -> Result<CompileResultNif, C
                     })
                 }
                 Err(errors) => {
-                    let diagnostics = diagnostics_to_vec(errors, &*world_guard);
+                    let diagnostics = diagnostics_to_vec(errors, &world_guard);
                     *ctx.document.lock() = None;
                     Err(CompileErrorNif { diagnostics })
                 }
@@ -710,21 +669,27 @@ fn context_compile(ctx: ResourceArc<TypstContext>) -> Result<CompileResultNif, C
 fn context_render_svg(
     ctx: ResourceArc<TypstContext>,
     page: usize,
+    pretty: bool,
+    render_bleed: bool,
 ) -> Result<String, CompileErrorNif> {
     let doc_guard = ctx.document.lock();
     let document = doc_guard
         .as_ref()
         .ok_or_else(|| simple_error("No compiled document. Call compile() first."))?;
 
-    if page >= document.pages.len() {
+    if page >= document.pages().len() {
         return Err(simple_error(&format!(
             "Page index {} out of bounds (document has {} pages)",
             page,
-            document.pages.len()
+            document.pages().len()
         )));
     }
 
-    Ok(typst_svg::svg(&document.pages[page]))
+    let opts = SvgOptions {
+        pretty,
+        render_bleed,
+    };
+    Ok(typst_svg::svg(&document.pages()[page], &opts))
 }
 
 #[rustler::nif(schedule = "DirtyCpu")]
@@ -741,12 +706,19 @@ fn context_export_pdf<'a>(
     let mut pdf_opts = opts.to_pdf_options().map_err(|e| simple_error(&e))?;
 
     if let Some(ref pages_str) = opts.pages {
-        pdf_opts.page_ranges =
-            Some(parse_page_ranges(pages_str, document.pages.len()).map_err(|e| simple_error(&e))?);
+        pdf_opts.page_ranges = Some(
+            parse_page_ranges(pages_str, document.pages().len()).map_err(|e| simple_error(&e))?,
+        );
     }
 
-    let pdf_bytes = typst_pdf::pdf(document, &pdf_opts).map_err(|e| CompileErrorNif {
-        diagnostics: diagnostics_to_vec_simple(e),
+    let result = typst_pdf::pdf(document, &pdf_opts);
+    drop(doc_guard);
+
+    let pdf_bytes = result.map_err(|e| {
+        let world = ctx.world.lock();
+        CompileErrorNif {
+            diagnostics: diagnostics_to_vec(e, &world),
+        }
     })?;
 
     let mut binary = NewBinary::new(env, pdf_bytes.len());
@@ -758,7 +730,8 @@ fn context_export_pdf<'a>(
 fn context_font_families(ctx: ResourceArc<TypstContext>) -> Vec<String> {
     let world = ctx.world.lock();
     world
-        .book
+        .fonts
+        .book()
         .families()
         .map(|(name, _)| name.to_string())
         .collect()
@@ -826,7 +799,10 @@ fn context_set_inputs(ctx: ResourceArc<TypstContext>, inputs: HashMap<String, St
 }
 
 #[rustler::nif(schedule = "DirtyCpu")]
-fn context_export_html(ctx: ResourceArc<TypstContext>) -> Result<String, CompileErrorNif> {
+fn context_export_html(
+    ctx: ResourceArc<TypstContext>,
+    pretty: bool,
+) -> Result<String, CompileErrorNif> {
     std::thread::Builder::new()
         .name("typst-html".into())
         .stack_size(COMPILE_STACK_SIZE)
@@ -834,21 +810,85 @@ fn context_export_html(ctx: ResourceArc<TypstContext>) -> Result<String, Compile
             let mut world_guard = ctx.world.lock();
             world_guard.reset();
             let result = typst::compile::<HtmlDocument>(&*world_guard);
+            let opts = HtmlOptions { pretty };
             match result.output {
-                Ok(html_doc) => match typst_html::html(&html_doc) {
+                Ok(html_doc) => match typst_html::html(&html_doc, &opts) {
                     Ok(html_string) => Ok(html_string),
                     Err(errors) => Err(CompileErrorNif {
-                        diagnostics: diagnostics_to_vec(errors, &*world_guard),
+                        diagnostics: diagnostics_to_vec(errors, &world_guard),
                     }),
                 },
                 Err(errors) => Err(CompileErrorNif {
-                    diagnostics: diagnostics_to_vec(errors, &*world_guard),
+                    diagnostics: diagnostics_to_vec(errors, &world_guard),
                 }),
             }
         })
         .map_err(|e| simple_error(&format!("Failed to spawn HTML compile thread: {e}")))?
         .join()
         .unwrap_or_else(|_| Err(simple_error("HTML compilation panicked")))
+}
+
+#[rustler::nif(schedule = "DirtyCpu")]
+fn context_export_bundle<'a>(
+    env: Env<'a>,
+    ctx: ResourceArc<TypstContext>,
+    opts: BundleOptionsNif,
+) -> Result<BundleResultNif<'a>, CompileErrorNif> {
+    let (files, warnings) = std::thread::Builder::new()
+        .name("typst-bundle".into())
+        .stack_size(COMPILE_STACK_SIZE)
+        .spawn(move || {
+            let mut world_guard = ctx.world.lock();
+            world_guard.reset();
+            let result = typst::compile::<Bundle>(&*world_guard);
+            let bundle = match result.output {
+                Ok(bundle) => bundle,
+                Err(errors) => {
+                    return Err(CompileErrorNif {
+                        diagnostics: diagnostics_to_vec(errors, &world_guard),
+                    })
+                }
+            };
+
+            let bundle_opts = BundleOptions {
+                html: HtmlOptions {
+                    pretty: opts.pretty,
+                },
+                svg: SvgOptions {
+                    pretty: opts.pretty,
+                    render_bleed: opts.render_bleed,
+                },
+                ..Default::default()
+            };
+
+            match export_bundle(&bundle, &bundle_opts) {
+                Ok(vfs) => {
+                    let files = vfs
+                        .into_iter()
+                        .map(|(path, bytes)| (path.get_without_slash().to_string(), bytes.to_vec()))
+                        .collect::<Vec<(String, Vec<u8>)>>();
+                    let warnings = diagnostics_to_vec(result.warnings, &world_guard);
+                    Ok((files, warnings))
+                }
+                Err(errors) => Err(CompileErrorNif {
+                    diagnostics: diagnostics_to_vec(errors, &world_guard),
+                }),
+            }
+        })
+        .map_err(|e| simple_error(&format!("Failed to spawn bundle compile thread: {e}")))?
+        .join()
+        .unwrap_or_else(|_| Err(simple_error("Bundle compilation panicked")))?;
+
+    let mut map = HashMap::with_capacity(files.len());
+    for (path, bytes) in files {
+        let mut binary = NewBinary::new(env, bytes.len());
+        binary.as_mut_slice().copy_from_slice(&bytes);
+        map.insert(path, binary.into());
+    }
+    Ok(BundleResultNif {
+        files: map,
+        warnings,
+    })
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
@@ -862,18 +902,17 @@ fn font_families(opts: FontOptionsNif) -> Vec<String> {
         .filter(|p| p.exists() && p.is_dir())
         .collect();
 
-    let fonts = if font_paths_vec.is_empty() {
-        Fonts::searcher()
-            .include_system_fonts(include_system_fonts)
-            .search()
-    } else {
-        Fonts::searcher()
-            .include_system_fonts(include_system_fonts)
-            .search_with(font_paths_vec)
-    };
+    let mut fonts = FontStore::new();
+    for path in &font_paths_vec {
+        fonts.extend(scan(path));
+    }
+    if include_system_fonts {
+        fonts.extend(system());
+    }
+    fonts.extend(embedded());
 
     fonts
-        .book
+        .book()
         .families()
         .map(|(name, _info)| name.to_string())
         .collect()

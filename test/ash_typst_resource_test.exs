@@ -28,6 +28,14 @@ defmodule AshTypst.ResourceTest do
         markup("= Static Page")
       end
 
+      template :site do
+        markup(~TYPST"""
+        #import "data.typ": args
+        #document("index.html", title: [Home])[= Hello #args.name]
+        #document("about.html", title: [About])[= About]
+        """)
+      end
+
       render :render_greeting do
         template(:greeting)
         format(:pdf)
@@ -53,6 +61,14 @@ defmodule AshTypst.ResourceTest do
       render :render_simple do
         template(:simple)
         format(:pdf)
+      end
+
+      render :render_site_bundle do
+        template(:site)
+        format(:bundle)
+        pretty(true)
+
+        argument :name, :string, allow_nil?: false
       end
     end
   end
@@ -136,7 +152,7 @@ defmodule AshTypst.ResourceTest do
 
     test "templates are accessible via Info" do
       templates = AshTypst.Resource.Info.templates(InlineTemplateResource)
-      assert length(templates) == 2
+      assert length(templates) == 3
 
       assert {:ok, greeting} = AshTypst.Resource.Info.template(InlineTemplateResource, :greeting)
       assert greeting.name == :greeting
@@ -278,6 +294,18 @@ defmodule AshTypst.ResourceTest do
 
       assert doc.format == :html
       assert is_binary(doc.data)
+    end
+
+    test "renders inline template as a bundle with arguments" do
+      input =
+        Ash.ActionInput.for_action(InlineTemplateResource, :render_site_bundle, %{name: "World"})
+
+      assert {:ok, %AshTypst.Document{} = doc} = Ash.run_action(input)
+
+      assert doc.format == :bundle
+      assert is_map(doc.data)
+      assert Enum.sort(Map.keys(doc.data)) == ["about.html", "index.html"]
+      assert doc.data["index.html"] =~ "Hello World"
     end
 
     test "renders template with no arguments (no read)" do
