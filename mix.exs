@@ -38,7 +38,22 @@ defmodule AshTypst.MixProject do
       before_closing_head_tag: &before_closing_head_tag/1,
       before_closing_body_tag: &before_closing_body_tag/1,
       groups_for_modules: [
-        Core: [AshTypst, AshTypst.Context],
+        Core: [
+          AshTypst,
+          AshTypst.Context,
+          AshTypst.Sigil,
+          AshTypst.PathResolver,
+          AshTypst.Document,
+          AshTypst.Type.Document
+        ],
+        Resource: [
+          AshTypst.Resource,
+          AshTypst.Resource.Info,
+          AshTypst.Resource.Render,
+          AshTypst.Resource.Render.Read,
+          AshTypst.Resource.Render.PdfOptions,
+          AshTypst.Resource.Template
+        ],
         "Data Encoding": [AshTypst.Code]
       ]
     ]
