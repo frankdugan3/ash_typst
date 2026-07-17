@@ -102,7 +102,9 @@ defmodule AshTypst.MixProject do
         "mix.exs",
         "README.md",
         "CHANGELOG.md",
-        "LICENSE.md"
+        "LICENSE.md",
+        "usage-rules.md",
+        "usage-rules"
       ]
     ]
   end
