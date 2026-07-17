@@ -16,6 +16,7 @@ fonts and compiled state in memory for fast, iterative rendering.
 - **PDF export** — proper binary output with page ranges, PDF/A standards, and document IDs
 - **HTML export** — via `typst-html`
 - **Virtual files** — inject data as in-memory `.typ` files your templates can `#import`
+- **Sandboxed filesystem access** — opt in to reading templates and assets from a root directory; disabled by default
 - **Streaming** — feed large datasets from Elixir streams into virtual files in constant memory
 - **`sys.inputs`** — pass simple string parameters accessible via `#sys.inputs` in templates
 - **Rich diagnostics** — compile errors include line/column numbers
@@ -42,7 +43,8 @@ set `RUSTLER_PRECOMPILATION_EXAMPLE_FORCE_BUILD=1`.
 ## Quick start
 
 ```elixir
-# 1. Create a context — fonts loaded once, reused for all operations
+# 1. Create a context — fonts loaded once, reused for all operations.
+#    `root:` is optional; see "Filesystem access" below.
 {:ok, ctx} = AshTypst.Context.new(root: "/path/to/templates")
 
 # 2. Set the main template
@@ -86,6 +88,37 @@ All rendering is done through `AshTypst.Context`.
 | `set_input/3`           | Set a single `sys.inputs` entry                        |
 | `set_inputs/2`          | Replace all `sys.inputs` entries                       |
 | `font_families/1`       | List fonts loaded in this context                      |
+
+## Filesystem access
+
+By default a context has **no filesystem access**: templates can only reference
+virtual files and Typst packages, and any other file reference fails to compile.
+
+To let templates read real files from disk — `#import`ed templates, images,
+data files — pass the `:root` option:
+
+```elixir
+{:ok, ctx} = AshTypst.Context.new(root: "/app/priv/typst")
+
+:ok = AshTypst.Context.set_markup(ctx, """
+#import "templates/invoice.typ": invoice  // read from /app/priv/typst/templates/
+#image("assets/logo.png")                 // read from /app/priv/typst/assets/
+""")
+```
+
+The root behaves like the Typst CLI's `--root`: all paths resolve inside it and
+cannot escape it (e.g. via `..`). Files on disk are re-checked on every
+`compile/1`, so edits are picked up without recreating the context. Virtual
+files take precedence over disk files at the same path.
+
+> [!WARNING]
+> Everything under `:root` becomes readable by any template compiled in the
+> context. Point it at a directory containing only template assets — never at
+> `"."` or another directory that may hold secrets (`.env`, config files, etc.).
+
+For Mix releases, prefer an absolute path derived at runtime, e.g.
+`Application.app_dir(:my_app, "priv/typst")`. The Ash resource extension does
+this for you via `root {:my_app, "priv/typst"}`.
 
 ## Data encoding
 

@@ -63,7 +63,7 @@ rustler::atoms! {
 #[derive(NifStruct)]
 #[module = "AshTypst.Context.Options"]
 pub struct ContextOptionsNif {
-    pub root: String,
+    pub root: Option<String>,
     pub font_paths: Vec<String>,
     pub ignore_system_fonts: bool,
 }
@@ -235,7 +235,7 @@ impl PdfOptionsNif {
 }
 
 pub struct SystemWorld {
-    root: PathBuf,
+    root: Option<PathBuf>,
     main: FileId,
     markup: String,
     library: LazyHash<Library>,
@@ -248,7 +248,7 @@ pub struct SystemWorld {
 }
 
 impl SystemWorld {
-    pub fn new(root: PathBuf, font_paths: Vec<PathBuf>, ignore_system_fonts: bool) -> Self {
+    pub fn new(root: Option<PathBuf>, font_paths: Vec<PathBuf>, ignore_system_fonts: bool) -> Self {
         let filtered_paths: Vec<PathBuf> = font_paths
             .into_iter()
             .filter(|p| p.exists() && p.is_dir())
@@ -329,7 +329,7 @@ impl World for SystemWorld {
             return Ok(Source::new(id, text.into()));
         }
 
-        self.slot(id, |slot| slot.source(&self.root, &self.packages))
+        self.slot(id, |slot| slot.source(self.root.as_deref(), &self.packages))
     }
 
     fn file(&self, id: FileId) -> FileResult<Bytes> {
@@ -337,7 +337,7 @@ impl World for SystemWorld {
             return Ok(Bytes::new(content.clone()));
         }
 
-        self.slot(id, |slot| slot.file(&self.root, &self.packages))
+        self.slot(id, |slot| slot.file(self.root.as_deref(), &self.packages))
     }
 
     fn font(&self, index: usize) -> Option<Font> {
@@ -396,7 +396,11 @@ impl FileSlot {
         self.file.reset();
     }
 
-    fn source(&mut self, project_root: &Path, packages: &SystemPackages) -> FileResult<Source> {
+    fn source(
+        &mut self,
+        project_root: Option<&Path>,
+        packages: &SystemPackages,
+    ) -> FileResult<Source> {
         self.source.get_or_init(
             || read(self.id, project_root, packages),
             |data, prev| {
@@ -417,7 +421,11 @@ impl FileSlot {
         )
     }
 
-    fn file(&mut self, project_root: &Path, packages: &SystemPackages) -> FileResult<Bytes> {
+    fn file(
+        &mut self,
+        project_root: Option<&Path>,
+        packages: &SystemPackages,
+    ) -> FileResult<Bytes> {
         self.file.get_or_init(
             || read(self.id, project_root, packages),
             |data, _| Ok(Bytes::new(data)),
@@ -472,16 +480,30 @@ impl<T: Clone> SlotCell<T> {
     }
 }
 
-fn system_path(project_root: &Path, id: FileId, packages: &SystemPackages) -> FileResult<PathBuf> {
+fn system_path(
+    project_root: Option<&Path>,
+    id: FileId,
+    packages: &SystemPackages,
+) -> FileResult<PathBuf> {
     let root = match id.root() {
         VirtualRoot::Package(spec) => packages.obtain(spec)?,
-        VirtualRoot::Project => FsRoot::new(project_root.to_path_buf()),
+        VirtualRoot::Project => match project_root {
+            Some(root) => FsRoot::new(root.to_path_buf()),
+            None => {
+                return Err(FileError::Other(Some(
+                    "filesystem access is disabled because no `:root` was configured; \
+                     pass `root:` to `AshTypst.Context.new/1` or provide the file with \
+                     `set_virtual_file/3`"
+                        .into(),
+                )))
+            }
+        },
     };
 
     root.resolve(id.vpath())
 }
 
-fn read(id: FileId, project_root: &Path, packages: &SystemPackages) -> FileResult<Vec<u8>> {
+fn read(id: FileId, project_root: Option<&Path>, packages: &SystemPackages) -> FileResult<Vec<u8>> {
     read_from_disk(&system_path(project_root, id, packages)?)
 }
 
@@ -616,7 +638,7 @@ fn parse_page_ranges(pages: &str, total: usize) -> Result<PageRanges, String> {
 
 #[rustler::nif(schedule = "DirtyIo")]
 fn context_new(opts: ContextOptionsNif) -> ResourceArc<TypstContext> {
-    let root = PathBuf::from(&opts.root);
+    let root = opts.root.as_ref().map(PathBuf::from);
     let font_paths: Vec<PathBuf> = opts.font_paths.iter().map(PathBuf::from).collect();
     let world = SystemWorld::new(root, font_paths, opts.ignore_system_fonts);
     ResourceArc::new(TypstContext {

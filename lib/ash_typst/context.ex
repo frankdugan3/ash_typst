@@ -31,9 +31,20 @@ defmodule AshTypst.Context do
 
   ## Options
 
-    * `:root` — root path for template resolution (default `"."`)
+    * `:root` — directory templates may read real files from (imports,
+      images, data files). Defaults to `nil`, which disables filesystem
+      access entirely: only virtual files and packages are available, and
+      any other file reference fails to compile. Set this explicitly to
+      let templates read from disk. Access is sandboxed to the root —
+      paths cannot escape it (e.g. via `..`).
     * `:font_paths` — additional font directories to search
     * `:ignore_system_fonts` — skip system fonts (default `false`)
+
+  > #### Security {: .warning}
+  >
+  > Everything under `:root` becomes readable by any template compiled in
+  > this context. Point it at a directory containing only template assets —
+  > never at `"."` or a directory with secrets (`.env`, config files, etc.).
   """
 
   def new(opts \\ [])

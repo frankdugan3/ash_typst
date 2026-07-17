@@ -32,6 +32,41 @@ defmodule AshTypst.ContextTest do
     end
   end
 
+  describe "filesystem access" do
+    setup do
+      dir = Path.join(System.tmp_dir!(), "ash_typst_fs_#{:erlang.unique_integer([:positive])}")
+      File.mkdir_p!(dir)
+      File.write!(Path.join(dir, "partial.typ"), "#let greeting = \"from disk\"")
+      on_exit(fn -> File.rm_rf!(dir) end)
+      {:ok, dir: dir}
+    end
+
+    test "is disabled by default" do
+      {:ok, ctx} = Context.new()
+      :ok = Context.set_markup(ctx, "#import \"partial.typ\": greeting\n#greeting")
+
+      assert {:error, %AshTypst.CompileError{diagnostics: [diagnostic | _]}} =
+               Context.compile(ctx)
+
+      assert diagnostic.message =~ "filesystem access is disabled"
+    end
+
+    test "reads files under an explicit root", %{dir: dir} do
+      {:ok, ctx} = Context.new(root: dir)
+      :ok = Context.set_markup(ctx, "#import \"partial.typ\": greeting\n#greeting")
+      assert {:ok, %AshTypst.CompileResult{page_count: 1}} = Context.compile(ctx)
+    end
+
+    test "cannot escape the root", %{dir: dir} do
+      nested = Path.join(dir, "nested")
+      File.mkdir_p!(nested)
+
+      {:ok, ctx} = Context.new(root: nested)
+      :ok = Context.set_markup(ctx, "#import \"../partial.typ\": greeting\n#greeting")
+      assert {:error, %AshTypst.CompileError{}} = Context.compile(ctx)
+    end
+  end
+
   describe "compile + render_svg" do
     test "basic lifecycle: new -> set_markup -> compile -> render_svg" do
       {:ok, ctx} = Context.new()
