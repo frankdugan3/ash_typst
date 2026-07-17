@@ -26,6 +26,8 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
 
       - name: Cache Elixir dependencies
         uses: actions/cache@v5

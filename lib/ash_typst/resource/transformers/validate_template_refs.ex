@@ -18,7 +18,7 @@ defmodule AshTypst.Resource.Transformers.ValidateTemplateRefs do
     dsl_state
     |> Info.renders()
     |> Enum.each(fn render ->
-      unless MapSet.member?(template_names, render.template) do
+      if !MapSet.member?(template_names, render.template) do
         raise DslError,
           module: module,
           message:
