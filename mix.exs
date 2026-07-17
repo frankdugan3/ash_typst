@@ -28,6 +28,9 @@ defmodule AshTypst.MixProject do
         "CHANGELOG.md",
         {"documentation/dsls/DSL-AshTypst.Resource.md",
          search_data: Spark.Docs.search_data_for(AshTypst.Resource)},
+        "documentation/topics/get-started.md",
+        "documentation/topics/templating.md",
+        "documentation/topics/multi-language.md",
         "documentation/topics/security/sensitive-data.md"
       ],
       groups_for_extras: [
