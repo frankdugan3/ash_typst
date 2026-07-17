@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::OnceLock;
 use std::{fs, mem};
@@ -49,6 +50,18 @@ const COMPILE_STACK_SIZE: usize = 64 * 1024 * 1024;
 /// multi-file `bundle` export target.
 fn enabled_features() -> Features {
     Features::from_iter([Feature::Html, Feature::Bundle])
+}
+
+/// Evict stale entries from Typst's global memoization cache.
+///
+/// `typst::compile` memoizes via a process-wide `comemo` cache that grows
+/// without bound unless evicted.  The Typst CLI evicts after every
+/// compilation with the same max age; without this, a long-running VM
+/// compiling varied documents leaks memory indefinitely.  The cache is
+/// shared across all contexts, so recently used entries still speed up
+/// repeat compilations.
+fn evict_memoization_cache() {
+    comemo::evict(10);
 }
 
 rustler::atoms! {
@@ -234,12 +247,53 @@ impl PdfOptionsNif {
     }
 }
 
+/// Process-wide cache of font scan results.
+///
+/// Scanning fonts (walking directories and parsing `FontInfo` for every face)
+/// is the dominant cost of creating a context, and the result only depends on
+/// the requested font paths and whether system fonts are included.  Contexts
+/// share the resulting `FontStore` via `Arc`, which also shares the lazily
+/// loaded font data (`FontSlot`'s `OnceLock`) across contexts.
+///
+/// Entries live until `clear_font_cache` is called: fonts installed after
+/// the first scan for a given key are not picked up until the cache is
+/// cleared (or the VM restarts).
+type FontCacheKey = (Vec<PathBuf>, bool);
+
+static FONT_CACHE: LazyLock<Mutex<HashMap<FontCacheKey, Arc<FontStore>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn font_store(font_paths: Vec<PathBuf>, ignore_system_fonts: bool) -> Arc<FontStore> {
+    // Filtering happens on every call, so a font directory created after a
+    // miss produces a new cache key and triggers a fresh scan.
+    let filtered_paths: Vec<PathBuf> = font_paths
+        .into_iter()
+        .filter(|p| p.exists() && p.is_dir())
+        .collect();
+
+    let mut cache = FONT_CACHE.lock();
+    cache
+        .entry((filtered_paths.clone(), ignore_system_fonts))
+        .or_insert_with(|| {
+            let mut fonts = FontStore::new();
+            for path in &filtered_paths {
+                fonts.extend(scan(path));
+            }
+            if !ignore_system_fonts {
+                fonts.extend(system());
+            }
+            fonts.extend(embedded());
+            Arc::new(fonts)
+        })
+        .clone()
+}
+
 pub struct SystemWorld {
     root: Option<PathBuf>,
     main: FileId,
     markup: String,
     library: LazyHash<Library>,
-    fonts: FontStore,
+    fonts: Arc<FontStore>,
     slots: Mutex<HashMap<FileId, FileSlot>>,
     packages: SystemPackages,
     now: Now,
@@ -249,21 +303,7 @@ pub struct SystemWorld {
 
 impl SystemWorld {
     pub fn new(root: Option<PathBuf>, font_paths: Vec<PathBuf>, ignore_system_fonts: bool) -> Self {
-        let filtered_paths: Vec<PathBuf> = font_paths
-            .into_iter()
-            .filter(|p| p.exists() && p.is_dir())
-            .collect();
-
-        let include_system_fonts = !ignore_system_fonts;
-
-        let mut fonts = FontStore::new();
-        for path in &filtered_paths {
-            fonts.extend(scan(path));
-        }
-        if include_system_fonts {
-            fonts.extend(system());
-        }
-        fonts.extend(embedded());
+        let fonts = font_store(font_paths, ignore_system_fonts);
 
         let user_agent = concat!("typst/", env!("CARGO_PKG_VERSION"));
         Self {
@@ -665,6 +705,7 @@ fn context_compile(ctx: ResourceArc<TypstContext>) -> Result<CompileResultNif, C
             let mut world_guard = ctx.world.lock();
             world_guard.reset();
             let result = typst::compile::<PagedDocument>(&*world_guard);
+            evict_memoization_cache();
             match result.output {
                 Ok(document) => {
                     let page_count = document.pages().len();
@@ -805,6 +846,14 @@ fn context_clear_virtual_file(ctx: ResourceArc<TypstContext>, path: String) -> A
 }
 
 #[rustler::nif]
+fn context_clear_virtual_files(ctx: ResourceArc<TypstContext>) -> Atom {
+    let mut world = ctx.world.lock();
+    world.virtual_files.clear();
+    *ctx.document.lock() = None;
+    ok()
+}
+
+#[rustler::nif]
 fn context_set_input(ctx: ResourceArc<TypstContext>, key: String, value: String) -> Atom {
     let mut world = ctx.world.lock();
     world.inputs.insert(key, value);
@@ -832,6 +881,7 @@ fn context_export_html(
             let mut world_guard = ctx.world.lock();
             world_guard.reset();
             let result = typst::compile::<HtmlDocument>(&*world_guard);
+            evict_memoization_cache();
             let opts = HtmlOptions { pretty };
             match result.output {
                 Ok(html_doc) => match typst_html::html(&html_doc, &opts) {
@@ -863,6 +913,7 @@ fn context_export_bundle<'a>(
             let mut world_guard = ctx.world.lock();
             world_guard.reset();
             let result = typst::compile::<Bundle>(&*world_guard);
+            evict_memoization_cache();
             let bundle = match result.output {
                 Ok(bundle) => bundle,
                 Err(errors) => {
@@ -913,25 +964,16 @@ fn context_export_bundle<'a>(
     })
 }
 
+#[rustler::nif]
+fn clear_font_cache() -> Atom {
+    FONT_CACHE.lock().clear();
+    ok()
+}
+
 #[rustler::nif(schedule = "DirtyIo")]
 fn font_families(opts: FontOptionsNif) -> Vec<String> {
-    let include_system_fonts = !opts.ignore_system_fonts;
-
-    let font_paths_vec: Vec<PathBuf> = opts
-        .font_paths
-        .iter()
-        .map(PathBuf::from)
-        .filter(|p| p.exists() && p.is_dir())
-        .collect();
-
-    let mut fonts = FontStore::new();
-    for path in &font_paths_vec {
-        fonts.extend(scan(path));
-    }
-    if include_system_fonts {
-        fonts.extend(system());
-    }
-    fonts.extend(embedded());
+    let font_paths: Vec<PathBuf> = opts.font_paths.iter().map(PathBuf::from).collect();
+    let fonts = font_store(font_paths, opts.ignore_system_fonts);
 
     fonts
         .book()

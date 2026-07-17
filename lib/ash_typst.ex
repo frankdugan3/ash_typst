@@ -110,6 +110,9 @@ defmodule AshTypst do
       {:ok, svg} = AshTypst.Context.render_svg(ctx, page: current_page)
   """
 
+  alias AshTypst.ContextPool
+  alias AshTypst.NIF
+
   @doc """
   List all font families available to Typst.
 
@@ -118,6 +121,22 @@ defmodule AshTypst do
   """
 
   def font_families(%AshTypst.FontOptions{} = opts \\ %AshTypst.FontOptions{}) do
-    AshTypst.NIF.font_families(opts)
+    NIF.font_families(opts)
+  end
+
+  @doc """
+  Refresh font discovery after fonts are installed or removed.
+
+  Font scan results are cached process-wide (per font configuration) and
+  reused by every new context, so font changes on the system are not
+  visible automatically. Calling this clears that cache and drops all
+  pooled render contexts — new contexts and render actions then re-scan.
+
+  Contexts you are still holding keep the fonts they were created with;
+  recreate them to pick up the changes.
+  """
+  def refresh_fonts do
+    :ok = NIF.clear_font_cache()
+    ContextPool.flush()
   end
 end

@@ -264,6 +264,17 @@ defmodule AshTypst.ContextTest do
       assert {:error, %AshTypst.CompileError{}} = Context.compile(ctx)
     end
 
+    test "clear_virtual_files removes all files" do
+      {:ok, ctx} = Context.new()
+      Context.set_virtual_file(ctx, "a.typ", "#let a = 1")
+      Context.set_virtual_file(ctx, "b.typ", "#let b = 2")
+      Context.set_markup(ctx, "#import \"a.typ\": a\n#import \"b.typ\": b\n#(a + b)")
+      assert {:ok, _} = Context.compile(ctx)
+
+      :ok = Context.clear_virtual_files(ctx)
+      assert {:error, %AshTypst.CompileError{}} = Context.compile(ctx)
+    end
+
     test "data changes produce different output" do
       {:ok, ctx} = Context.new()
 

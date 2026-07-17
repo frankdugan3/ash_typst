@@ -15,6 +15,10 @@ defmodule AshTypst.Context do
   Steps 2-5 can be repeated without re-creating the context. Fonts and
   virtual files persist until explicitly changed.
 
+  For short-lived, request-scoped rendering (e.g. a preview endpoint),
+  consider `AshTypst.ContextPool.with_context/2`, which reuses contexts
+  across callers instead of creating one per render.
+
   ## Thread safety
 
   Each function acquires internal locks, so a single context can be shared
@@ -27,7 +31,11 @@ defmodule AshTypst.Context do
   @doc """
   Create a new context.
 
-  Fonts are scanned once during creation and reused across all operations.
+  Font scan results are cached process-wide per `{font_paths,
+  ignore_system_fonts}` combination, so creating additional contexts with
+  the same font configuration is cheap and shares already-loaded font
+  data. Fonts installed after the first scan are not picked up until
+  `AshTypst.refresh_fonts/0` is called.
 
   ## Options
 
@@ -152,6 +160,12 @@ defmodule AshTypst.Context do
 
   def clear_virtual_file(ctx, path) when is_binary(path) do
     NIF.context_clear_virtual_file(ctx, path)
+  end
+
+  @doc "Remove all virtual files. Invalidates the compiled document."
+
+  def clear_virtual_files(ctx) do
+    NIF.context_clear_virtual_files(ctx)
   end
 
   @doc """

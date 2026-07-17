@@ -3,6 +3,7 @@ defmodule AshTypst.Resource.Run do
   use Ash.Resource.Actions.Implementation
 
   alias Ash.Error.Query.NotFound
+  alias AshTypst.ContextPool
   alias AshTypst.Resource.Errors
   alias AshTypst.Resource.Info
 
@@ -11,9 +12,15 @@ defmodule AshTypst.Resource.Run do
     resource = input.resource
     template = Info.template!(resource, opts[:template])
 
-    with {:ok, data} <- fetch_data(resource, input, opts, context),
-         {:ok, ctx} <- build_context(resource),
-         :ok <- set_template(ctx, template, resource),
+    with {:ok, data} <- fetch_data(resource, input, opts, context) do
+      ContextPool.with_context(context_options(resource), fn ctx ->
+        render(ctx, template, resource, data, input, opts)
+      end)
+    end
+  end
+
+  defp render(ctx, template, resource, data, input, opts) do
+    with :ok <- set_template(ctx, template, resource),
          :ok <- set_inputs(ctx, template),
          :ok <- inject_data(ctx, data, input.arguments, opts),
          {:ok, compile_result} <- maybe_compile(ctx, opts[:format]) do
@@ -112,16 +119,16 @@ defmodule AshTypst.Resource.Run do
   defp handle_not_found({:ok, nil}, _), do: {:error, NotFound.exception([])}
   defp handle_not_found(result, _), do: result
 
-  defp build_context(resource) do
+  defp context_options(resource) do
     {:ok, root} = Info.typst_root(resource)
     {:ok, font_paths} = Info.typst_font_paths(resource)
     {:ok, ignore_system_fonts} = Info.typst_ignore_system_fonts(resource)
 
-    AshTypst.Context.new(
+    %AshTypst.Context.Options{
       root: AshTypst.PathResolver.resolve(root),
       font_paths: AshTypst.PathResolver.resolve_all(font_paths),
       ignore_system_fonts: ignore_system_fonts
-    )
+    }
   end
 
   defp set_template(ctx, %{source: source}, resource) when not is_nil(source) do

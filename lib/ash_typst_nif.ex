@@ -31,9 +31,11 @@ defmodule AshTypst.NIF do
   def context_set_virtual_file_binary(_ctx, _path, _content), do: :erlang.nif_error(:not_loaded)
   def context_append_virtual_file(_ctx, _path, _chunk), do: :erlang.nif_error(:not_loaded)
   def context_clear_virtual_file(_ctx, _path), do: :erlang.nif_error(:not_loaded)
+  def context_clear_virtual_files(_ctx), do: :erlang.nif_error(:not_loaded)
   def context_set_input(_ctx, _key, _value), do: :erlang.nif_error(:not_loaded)
   def context_set_inputs(_ctx, _inputs), do: :erlang.nif_error(:not_loaded)
   def context_export_html(_ctx, _pretty), do: :erlang.nif_error(:not_loaded)
   def context_export_bundle(_ctx, _opts), do: :erlang.nif_error(:not_loaded)
   def font_families(_opts), do: :erlang.nif_error(:not_loaded)
+  def clear_font_cache, do: :erlang.nif_error(:not_loaded)
 end

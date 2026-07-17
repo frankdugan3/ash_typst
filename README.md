@@ -11,7 +11,7 @@ fonts and compiled state in memory for fast, iterative rendering.
 
 ## Features
 
-- **Persistent context** — fonts are scanned once and reused across compiles
+- **Persistent context** — font scans are cached process-wide and reused across contexts and compiles; call `AshTypst.refresh_fonts/0` to pick up newly installed fonts
 - **Multi-page rendering** — compile once, render any page as SVG
 - **PDF export** — proper binary output with page ranges, PDF/A standards, and document IDs
 - **HTML export** — via `typst-html`
@@ -85,6 +85,7 @@ All rendering is done through `AshTypst.Context`.
 | `stream_virtual_file/4` | Stream an enumerable into a virtual file               |
 | `append_virtual_file/3` | Append a chunk to a virtual file                       |
 | `clear_virtual_file/2`  | Remove a virtual file                                  |
+| `clear_virtual_files/1` | Remove all virtual files                               |
 | `set_input/3`           | Set a single `sys.inputs` entry                        |
 | `set_inputs/2`          | Replace all `sys.inputs` entries                       |
 | `font_families/1`       | List fonts loaded in this context                      |
@@ -227,3 +228,31 @@ the changed markup or data needs to be re-set before re-compiling:
 ```
 
 Fonts, virtual files, and `sys.inputs` all persist across re-compilations.
+
+## Context pooling
+
+Ash render actions automatically reuse contexts through `AshTypst.ContextPool`.
+For direct `AshTypst.Context` usage the pool is opt-in: wrap renders in
+`with_context/2` instead of creating a context per render. This is ideal for
+request-scoped rendering — for example a real-time preview editor where every
+keystroke triggers a render from a fresh process:
+
+```elixir
+def handle_event("edit", %{"markup" => markup}, socket) do
+  {:ok, svg} =
+    AshTypst.ContextPool.with_context([root: template_dir()], fn ctx ->
+      :ok = AshTypst.Context.set_markup(ctx, markup)
+
+      with {:ok, _} <- AshTypst.Context.compile(ctx) do
+        AshTypst.Context.render_svg(ctx, page: 0)
+      end
+    end)
+
+  {:noreply, assign(socket, :preview, svg)}
+end
+```
+
+Contexts are pooled per option set and handed back cleaned (virtual files and
+`sys.inputs` cleared), so nothing leaks between renders. Long-lived sessions
+that keep a dedicated context (the "Live editing" pattern above) don't need the
+pool — it pays off when the rendering process is short-lived.

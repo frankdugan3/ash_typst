@@ -17,6 +17,7 @@ nif_version_2_17 = ["rustler/nif_version_2_17"]
 
 [dependencies]
 chrono = "0.4"
+comemo = "0.5"
 parking_lot = "0.12"
 rustler = { version = "0.38", default-features = false, features = ["derive"] }
 typst = "0.15"

@@ -42,6 +42,7 @@ defmodule AshTypst.MixProject do
           AshTypst,
           AshTypst.Code,
           AshTypst.Context,
+          AshTypst.ContextPool,
           AshTypst.Sigil,
           AshTypst.PathResolver,
           AshTypst.Document,
@@ -105,7 +106,8 @@ defmodule AshTypst.MixProject do
 
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: [:logger],
+      mod: {AshTypst.Application, []}
     ]
   end
 
