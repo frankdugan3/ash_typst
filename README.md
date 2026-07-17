@@ -123,7 +123,8 @@ this for you via `root {:my_app, "priv/typst"}`.
 
 ## Data encoding
 
-The `AshTypst.Code` protocol converts Elixir values into Typst source syntax:
+The [`AshTypst.Code`](https://hexdocs.pm/ash_typst/AshTypst.Code.html) protocol
+converts Elixir values into Typst source syntax:
 
 | Elixir type                                    | Typst type                    |
 | ---------------------------------------------- | ----------------------------- |
@@ -138,11 +139,17 @@ The `AshTypst.Code` protocol converts Elixir values into Typst source syntax:
 | `nil`                                          | `none`                        |
 | Ash resource                                   | `dictionary` of public fields |
 
-To encode an Ash resource's records (or any struct) you must opt it into the
-protocol by adding `@derive AshTypst.Code` to the module. Deriving uses the
-built-in implementation, which serializes a resource's public fields. For full
-control over how a struct serializes, implement the protocol directly with
-`defimpl AshTypst.Code, for: MyStruct`.
+> [!IMPORTANT]
+> To encode an Ash resource's records (or any struct) you **must** opt it into
+> the protocol by adding `@derive AshTypst.Code` to the module — without it,
+> encoding raises `Protocol.UndefinedError`. Deriving uses the built-in
+> implementation, which serializes a resource's public fields with the values
+> the query actually selected and loaded. For full control over how a struct
+> serializes, implement the protocol directly with
+> `defimpl AshTypst.Code, for: MyStruct`.
+
+See the [`AshTypst.Code` docs](https://hexdocs.pm/ash_typst/AshTypst.Code.html)
+for the full encoding rules, including how query results are kept compact.
 
 ## Ash Resource Extension
 

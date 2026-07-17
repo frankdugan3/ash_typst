@@ -55,6 +55,60 @@ defprotocol AshTypst.Code do
   end
   ```
 
+  ## Query-level compaction
+
+  The built-in Ash resource implementation carries only the data your query
+  actually produced. Every public field appears as a key in the emitted
+  dictionary, but the *values* follow the query:
+
+  - **Private fields are excluded entirely** — only `public?: true` fields
+    are considered.
+  - **Anything the query did not produce is omitted.** Attributes excluded
+    via `Ash.Query.select/2` (or the `select` option of a render action's
+    `read` block) and relationships, calculations, or aggregates that were
+    not loaded do not appear in the dictionary at all — not even as `none`.
+  - **Loaded-but-empty is preserved.** A field the query *did* produce with
+    an empty result (e.g. a `belongs_to` that resolved to `nil`) encodes as
+    `none`, keeping "no value" distinct from "not queried".
+  - **Forbidden fields are omitted silently.** A field redacted by a field
+    policy (`Ash.ForbiddenField`) is dropped, the same as not-loaded.
+  - **Anonymous calculations and aggregates live under `calculations` /
+    `aggregates`.** Calculations and aggregates loaded ad hoc on the query
+    (rather than declared on the resource) are encoded as dictionaries under
+    those two keys; when empty, the keys are dropped.
+
+  The encoded output is Typst *source code* that the compiler must parse and
+  evaluate on every compile, so payload size translates directly into
+  compilation time. Because the payload follows the query, it is ideal to
+  de-select attributes your template does not use — especially for large
+  documents rendering thousands of records, where a few unused text columns
+  can multiply the data the Typst compiler has to chew through:
+
+  ```elixir
+  read :many do
+    select [:name, :amount, :inserted_at]
+    load [:line_items]
+  end
+  ```
+
+  Ideally a template references only fields its query provides, so absent
+  keys are never an issue. If a single template is shared by actions with
+  *different* query loads, read the varying fields with a default:
+  `record.at("field", default: none)`.
+
+  ## Key order
+
+  Dictionary keys are emitted in Erlang's native map iteration order — they
+  are deliberately *not* sorted, to keep encoding fast for large datasets.
+  That order is not defined across VM runs, so templates should access fields
+  by name (or sort explicitly when iterating) rather than rely on key order,
+  and byte-identical output across runs is not guaranteed.
+
+  To override which keys are encoded for a given struct, pass `struct_keys`
+  in the context — a map of struct module to the exact keys to take:
+
+      AshTypst.Code.encode(record, %{struct_keys: %{MyApp.Invoice => [:id, :total]}})
+
   Context must be passed through. This allows for things like dates to be formatted according to a given timezone, etc.
 
   If `timezone` is specified in the context, supported types will be automatically shifted to that zone. Ensure you install and configure your choice of timezone database in `config.exs`:
@@ -99,18 +153,16 @@ defimpl AshTypst.Code, for: Any do
   end
 
   defp strip_ash_resource(map) do
-    loadable_keys =
-      map.__struct__
-      |> Ash.Resource.Info.public_fields()
-      |> Enum.reduce([], fn
-        %{name: name, type: :attribute}, acc ->
-          if name in map.__metadata__.selected, do: [name | acc], else: acc
+    public_keys = Enum.map(Ash.Resource.Info.public_fields(map.__struct__), & &1.name)
 
-        %{name: name}, acc ->
-          [name | acc]
-      end)
-
-    Map.take(map, [:calculations, :aggregates] ++ loadable_keys)
+    map
+    |> Map.take([:calculations, :aggregates] ++ public_keys)
+    |> Map.reject(fn
+      {_key, %Ash.NotLoaded{}} -> true
+      {_key, %Ash.ForbiddenField{}} -> true
+      {key, value} when key in [:calculations, :aggregates] -> value == %{}
+      {_key, _value} -> false
+    end)
   end
 end
 

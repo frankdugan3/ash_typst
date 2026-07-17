@@ -31,6 +31,14 @@ defmodule AshTypst.Test.CodeDerive.Resource do
     attribute :secret, :string, public?: false
   end
 
+  relationships do
+    belongs_to :parent, __MODULE__, public?: true
+  end
+
+  calculations do
+    calculate :shout, :string, expr(name <> "!"), public?: true
+  end
+
   actions do
     defaults [:read, create: [:name, :secret]]
   end

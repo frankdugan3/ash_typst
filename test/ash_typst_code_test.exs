@@ -2,6 +2,8 @@ defmodule AshTypst.CodeTest do
   use ExUnit.Case
   doctest AshTypst.Code
 
+  import Ash.Expr
+
   alias AshTypst.Test.CodeDerive.Resource
 
   describe "@derive AshTypst.Code" do
@@ -13,8 +15,84 @@ defmodule AshTypst.CodeTest do
 
       encoded = AshTypst.Code.encode(record, %{})
 
+      assert encoded =~ ~s("id": "#{record.id}")
       assert encoded =~ ~s("name": "Zardoz")
+      assert encoded =~ ~s("parent_id": none)
       refute encoded =~ "p@ssw0rd"
+    end
+
+    test "drops de-selected attributes entirely" do
+      record =
+        Resource
+        |> Ash.Changeset.for_create(:create, %{name: "Zardoz"})
+        |> Ash.create!()
+
+      [reread] =
+        Resource
+        |> Ash.Query.filter_input(%{id: record.id})
+        |> Ash.Query.select([:id])
+        |> Ash.read!()
+
+      encoded = AshTypst.Code.encode(reread, %{})
+
+      assert encoded =~ ~s("id": "#{record.id}")
+      refute encoded =~ "name"
+    end
+
+    test "drops not-loaded relationships and calculations, keeps loaded ones" do
+      record =
+        Resource
+        |> Ash.Changeset.for_create(:create, %{name: "Zardoz"})
+        |> Ash.create!()
+
+      encoded = AshTypst.Code.encode(record, %{})
+
+      refute encoded =~ ~s("parent": )
+      refute encoded =~ "shout"
+
+      loaded = Ash.load!(record, [:shout, :parent])
+      encoded = AshTypst.Code.encode(loaded, %{})
+
+      assert encoded =~ ~s("parent": none)
+      assert encoded =~ ~s("shout": "Zardoz!")
+    end
+
+    test "drops empty calculations/aggregates maps, keeps anonymous calculations" do
+      record =
+        Resource
+        |> Ash.Changeset.for_create(:create, %{name: "Zardoz"})
+        |> Ash.create!()
+
+      encoded = AshTypst.Code.encode(record, %{})
+
+      refute encoded =~ "calculations"
+      refute encoded =~ "aggregates"
+
+      [reread] =
+        Resource
+        |> Ash.Query.filter_input(%{id: record.id})
+        |> Ash.Query.calculate(:anon, :string, expr(name <> "?"))
+        |> Ash.read!()
+
+      encoded = AshTypst.Code.encode(reread, %{})
+
+      assert encoded =~ ~s|"calculations": ("anon": "Zardoz?")|
+      refute encoded =~ "aggregates"
+    end
+
+    test "drops forbidden fields silently" do
+      record =
+        Resource
+        |> Ash.Changeset.for_create(:create, %{name: "Zardoz"})
+        |> Ash.create!()
+
+      redacted = %{record | name: %Ash.ForbiddenField{field: :name, type: :attribute}}
+
+      encoded = AshTypst.Code.encode(redacted, %{})
+
+      assert encoded =~ ~s("id": "#{record.id}")
+      refute encoded =~ ~s("name")
+      refute encoded =~ "Zardoz"
     end
   end
 
