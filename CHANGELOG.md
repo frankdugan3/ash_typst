@@ -5,6 +5,23 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.4.0](https://github.com/frankdugan3/ash_typst/compare/v0.3.0...v0.4.0) (2026-07-17)
+### Breaking Changes:
+
+* compact encoding by dropping unselected/unloaded entirely; improve documentation for encoding by Frank Polasek Dugan III
+
+* disable root path by default instead of assuming cwd: prevents accidental access to filesystem in templates by Frank Polasek Dugan III
+
+
+
+### Features:
+
+* add usage-rules by Frank Polasek Dugan III
+
+* improve font caching, prevent memory leaks for long-running contexts by Frank Polasek Dugan III
+
+* upgrade to Typst 0.15.1 by Frank Polasek Dugan III
+
 ## [v0.3.0](https://github.com/frankdugan3/ash_typst/compare/v0.2.0...v0.3.0) (2026-06-15)
 ### Breaking Changes:
 
