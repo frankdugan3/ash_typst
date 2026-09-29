@@ -22,4 +22,23 @@ defmodule AshTypstTest do
       assert is_list(fonts)
     end
   end
+
+  describe "evict_cache/1" do
+    test "evicts the memoization cache without affecting later compiles" do
+      assert {:ok, ctx} = AshTypst.Context.new()
+      :ok = AshTypst.Context.set_markup(ctx, "= Before\n#pagebreak()\n= Eviction")
+      assert {:ok, %{page_count: 2}} = AshTypst.Context.compile(ctx)
+
+      assert :ok = AshTypst.evict_cache()
+      assert {:ok, %{page_count: 2}} = AshTypst.Context.compile(ctx)
+
+      assert :ok = AshTypst.evict_cache(10)
+      assert {:ok, pdf} = AshTypst.Context.export_pdf(ctx)
+      assert <<"%PDF-", _rest::binary>> = pdf
+    end
+
+    test "rejects a negative max age" do
+      assert_raise FunctionClauseError, fn -> AshTypst.evict_cache(-1) end
+    end
+  end
 end

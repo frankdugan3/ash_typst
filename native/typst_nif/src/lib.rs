@@ -970,6 +970,15 @@ fn clear_font_cache() -> Atom {
     ok()
 }
 
+/// Evict memoization entries unused for more than `max_age` compilations (`0`
+/// evicts everything). Every compilation already evicts with a max age of 10,
+/// which keeps up to ten recent documents' results alive in a long-running VM.
+#[rustler::nif(schedule = "DirtyCpu")]
+fn evict_cache(max_age: usize) -> Atom {
+    comemo::evict(max_age);
+    ok()
+}
+
 #[rustler::nif(schedule = "DirtyIo")]
 fn font_families(opts: FontOptionsNif) -> Vec<String> {
     let font_paths: Vec<PathBuf> = opts.font_paths.iter().map(PathBuf::from).collect();

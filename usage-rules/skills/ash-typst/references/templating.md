@@ -172,3 +172,8 @@ Values that *were* queried but are empty come through as `none`, so
 3. **Aggregate in the query when possible.** Sums/counts the data layer can
    compute (Ash aggregates) are cheaper there than in template code iterating
    a huge array.
+4. **Evict the memoization cache after large one-off renders.** Typst's
+   process-wide cache keeps the last ten compilations' results, so large
+   distinct documents stay resident and add up. Call `AshTypst.evict_cache/0`
+   after them (e.g. at the end of an export job); it frees memory between
+   renders, not a single render's peak.

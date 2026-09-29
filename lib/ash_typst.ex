@@ -139,4 +139,17 @@ defmodule AshTypst do
     :ok = NIF.clear_font_cache()
     ContextPool.flush()
   end
+
+  @doc """
+  Evict Typst's process-wide memoization cache.
+
+  Every compilation keeps the memoized results of the last ten compilations,
+  which speeds up re-rendering similar documents but holds large documents'
+  layouts in memory. Call this after rendering large or one-off documents to
+  release them: entries unused for more than `max_age` compilations are
+  evicted, and `0` (the default) evicts everything.
+  """
+  def evict_cache(max_age \\ 0) when is_integer(max_age) and max_age >= 0 do
+    NIF.evict_cache(max_age)
+  end
 end
