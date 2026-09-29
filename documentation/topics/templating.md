@@ -216,7 +216,7 @@ with a `none` default handles both cases with one idiom.
 
 ## Large documents
 
-For documents rendering thousands of records, three levers matter:
+For documents rendering thousands of records, four levers matter:
 
 1. **Stream the data.** `AshTypst.Context.stream_virtual_file/4` encodes an
    enumerable into the virtual file in batches, so Elixir memory stays flat
@@ -230,3 +230,10 @@ For documents rendering thousands of records, three levers matter:
 3. **Let the template do the aggregation it can't avoid, and the query do
    the rest.** Sums and counts your data layer can compute (Ash aggregates)
    are cheaper there than in template code iterating a huge array.
+4. **Release the memoization cache after large one-off renders.** Typst
+   memoizes compilation in a process-wide cache that keeps the results of
+   the last ten compilations, so a large document's layout stays in memory
+   after its render returns, and distinct large documents (each with its own
+   id or timestamp) add up. Call `AshTypst.evict_cache/0` after such renders,
+   for example at the end of a background export job. This releases memory
+   between renders; it does not lower the peak of a single render.

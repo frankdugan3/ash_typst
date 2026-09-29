@@ -38,4 +38,5 @@ defmodule AshTypst.NIF do
   def context_export_bundle(_ctx, _opts), do: :erlang.nif_error(:not_loaded)
   def font_families(_opts), do: :erlang.nif_error(:not_loaded)
   def clear_font_cache, do: :erlang.nif_error(:not_loaded)
+  def evict_cache(_max_age), do: :erlang.nif_error(:not_loaded)
 end
