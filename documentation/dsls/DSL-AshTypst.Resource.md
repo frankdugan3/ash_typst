@@ -317,7 +317,7 @@ Declares a preparation that runs before the template is rendered.
 
 | Name | Type | Default | Docs |
 |------|------|---------|------|
-| [`on`](#typst-render-prepare-on){: #typst-render-prepare-on } | `:read \| :action \| :create \| :update \| :destroy \| list(:read \| :action \| :create \| :update \| :destroy)` | `[:read]` | The action types the preparation should run on. By default, preparations only run on read actions. Use `:action` to run on generic actions. |
+| [`on`](#typst-render-prepare-on){: #typst-render-prepare-on } | `:read \| :action \| list(:read \| :action)` | `[:read]` | The action types the preparation should run on. By default, preparations only run on read actions. Use `:action` to run on generic actions. |
 | [`where`](#typst-render-prepare-where){: #typst-render-prepare-where } | `(any, any -> any) \| module \| list((any, any -> any) \| module)` | `[]` | Validations that should pass in order for this preparation to apply. Any of these validations failing will result in this preparation being ignored. |
 | [`only_when_valid?`](#typst-render-prepare-only_when_valid?){: #typst-render-prepare-only_when_valid? } | `boolean` | `false` | If the preparation should only run on valid queries. |
 
@@ -354,7 +354,7 @@ Declares a validation for this action.
 | [`only_when_valid?`](#typst-render-validate-only_when_valid?){: #typst-render-validate-only_when_valid? } | `boolean` | `false` | If the validation should only run on valid changesets. Useful for expensive validations or validations that depend on valid data. |
 | [`message`](#typst-render-validate-message){: #typst-render-validate-message } | `String.t` |  | If provided, overrides any message set by the validation error |
 | [`description`](#typst-render-validate-description){: #typst-render-validate-description } | `String.t` |  | An optional description for the validation |
-| [`before_action?`](#typst-render-validate-before_action?){: #typst-render-validate-before_action? } | `boolean` | `false` | If set to `true`, the validation will be run in a before_action hook |
+| [`before_action?`](#typst-render-validate-before_action?){: #typst-render-validate-before_action? } | `boolean` | `false` | If set to `true`, the validation will be run in a before_action hook, i.e. when the action is executed (inside the transaction) rather than when the changeset is built. Useful for validations that run queries or are otherwise expensive. Cannot be used with atomic actions. |
 | [`always_atomic?`](#typst-render-validate-always_atomic?){: #typst-render-validate-always_atomic? } | `boolean` | `false` | By default, validations are only run atomically if all changes will be run atomically or if there is no `validate/3` callback defined. Set this to `true` to run it atomically always. |
 
 
