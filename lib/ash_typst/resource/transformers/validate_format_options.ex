@@ -56,15 +56,36 @@ defmodule AshTypst.Resource.Transformers.ValidateFormatOptions do
       "`read :one` does not support `batch_size`.",
       module
     )
+
+    reject(
+      read.stream_with,
+      render,
+      read,
+      :stream_with,
+      "`read :one` does not support `stream_with`.",
+      module
+    )
   end
 
+  # `not_found` defaults to `:error`, so only an explicit `nil` can be told
+  # apart from the option not being set.
   defp validate_read_options(%{read: %{cardinality: :many} = read} = render, module) do
     reject(
-      read.not_found,
+      is_nil(read.not_found),
       render,
       read,
       :not_found,
       "`read :many` does not support `not_found`.",
+      module
+    )
+
+    # Without streaming, all records are fetched and encoded at once.
+    reject(
+      read.stream_with == :none && read.batch_size != 100,
+      render,
+      read,
+      :batch_size,
+      "`stream_with :none` does not support `batch_size`.",
       module
     )
   end

@@ -27,7 +27,8 @@ source with string interpolation.
   containing only template assets, never `"."` or anywhere with secrets.
 - **In Ash apps, prefer the resource extension** (`AshTypst.Resource`) over
   manual context management: render actions pool and scrub contexts
-  automatically and run reads with `authorize?: true`, passing actor/tenant.
+  automatically and run reads as the caller (actor, tenant, tracer, and
+  `authorize?`, which defaults to `true`).
 
 ## Choosing a rendering pipeline
 
@@ -101,6 +102,23 @@ Data is injected into a virtual `data.typ` the template imports:
 `#import "data.typ": record, args`. Available bindings: `args` always; `record`
 with `read :one`; `records` (streamed array) with `read :many`.
 
+- `filter`, `load`, `sort` and `arguments` in a `read` accept Ash templates:
+  `^arg(:name)`, `^actor(:field)`, `^tenant()`, `^context(:key)` inside
+  `expr/1`, and the same without `^` outside it
+  (`load label: %{prefix: arg(:prefix)}`). `select` and `limit` are static.
+  An `arg` that names an undeclared argument is a compile error.
+- `read` uses the primary read action; set `action` (and `arguments`) to run
+  another one.
+- `read :many` is streamed page by page with `Ash.stream!/2`, so its read
+  action **must support pagination** (compile-time check). Default `:read`
+  actions do; for a custom action add
+  `pagination keyset?: true, required?: false`. Keyset is used when
+  available, offset otherwise; override with `stream_with`. To opt out of
+  streaming and read every record at once, set `stream_with :none`
+  explicitly (never a default).
+- Set `encoding_context` on the render to pass an encoding context, e.g.
+  `encoding_context %{timezone: arg(:timezone)}`.
+
 ## Encoding semantics (built-in Ash resource implementation)
 
 - Only `public?: true` fields are considered; private fields never reach templates.
@@ -114,7 +132,8 @@ with `read :one`; `records` (streamed array) with `read :many`.
   especially for `:many` renders.
 - Dictionary key order is not stable across VM runs; access fields by name.
 - Dates/times encode as Typst `datetime(...)`. Pass `%{timezone: "..."}` in the
-  encoding context to shift zones (requires a configured time-zone database).
+  encoding context to shift zones (requires a configured time-zone database);
+  in a render action, set it with `encoding_context`.
 - `sensitive? true` on attributes/arguments redacts telemetry only — it does
   **not** keep values out of rendered documents. Use `public?: false`,
   de-select, `struct_keys`, or a custom `defimpl` for that.

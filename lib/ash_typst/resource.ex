@@ -86,6 +86,19 @@ defmodule AshTypst.Resource do
   - **Read `:one`**: both `record` (the single resource) and `args` are available.
   - **Read `:many`**: `records` (an array, streamed in batches) and `args` are available.
 
+  A `read :one` with `not_found nil` that finds nothing sets `record` to `none`.
+
+  The read runs as the caller: the actor, tenant, tracer and `authorize?` of the
+  render action are passed on to it (`authorize?` defaults to `true`). It uses
+  the primary read action unless the `read` names another `action`, and its
+  `filter`, `load`, `sort` and `arguments` accept the `arg/1`, `actor/1`,
+  `tenant/0` and `context/1` templates. A `read :many` is streamed with
+  `Ash.stream!/2`; see `AshTypst.Resource.Render.Read` for how the records are
+  fetched and what that means for memory use.
+
+  Values are encoded with an empty context unless the render sets
+  `encoding_context`, e.g. `encoding_context %{timezone: arg(:timezone)}`.
+
   Any render action that declares a `read` encodes the fetched resource records
   via the `AshTypst.Code` protocol, so the resource must opt in by adding
   `@derive AshTypst.Code` (see the usage example above). Deriving serializes the
@@ -226,6 +239,7 @@ defmodule AshTypst.Resource do
       AshTypst.Resource.Transformers.BuildActions,
       AshTypst.Resource.Transformers.ValidateTemplateRefs,
       AshTypst.Resource.Transformers.ValidateFormatOptions,
+      AshTypst.Resource.Transformers.ValidateRead,
       AshTypst.Resource.Transformers.ValidateCodeDerivation
     ]
 end

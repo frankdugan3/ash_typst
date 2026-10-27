@@ -28,6 +28,7 @@ defmodule AshTypst.Resource.Transformers.BuildActions do
         template: entity.template,
         format: entity.format,
         data_file: entity.data_file,
+        encoding_context: entity.encoding_context,
         page: entity.page
       ]
       |> then(fn opts ->

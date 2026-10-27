@@ -79,10 +79,11 @@ The second argument is a map threaded through the whole encode:
   for that struct instead of the automatic public-field stripping. Useful as
   an explicit, greppable per-render field selection.
 
-Render actions encode with an empty context (`%{}`) — no timezone shifting;
-use calculations for localized/zone-formatted values (see
-`multi-language.md`). Direct `stream_virtual_file/4` accepts `context:` to
-pass one.
+Render actions encode with an empty context (`%{}`) unless the render sets
+`encoding_context`, e.g. `encoding_context %{timezone: arg(:timezone)}`; it
+applies to `args`, `record` and `records`. Use calculations for
+localized/zone-formatted strings (see `multi-language.md`). Direct
+`stream_virtual_file/4` accepts `context:` to pass one.
 
 ## Key order
 

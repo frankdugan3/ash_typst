@@ -12,17 +12,29 @@ defmodule AshTypst.Resource.Run do
     resource = input.resource
     template = Info.template!(resource, opts[:template])
 
-    with {:ok, data} <- fetch_data(resource, input, opts, context) do
+    template_opts = [
+      actor: context.actor,
+      tenant: context.tenant,
+      args: input.arguments,
+      context: input.context
+    ]
+
+    encoding_context =
+      (opts[:encoding_context] || %{})
+      |> Ash.Expr.fill_template(template_opts)
+      |> Map.reject(fn {_key, value} -> is_nil(value) end)
+
+    with {:ok, data} <- fetch_data(resource, input, opts[:read], context, template_opts) do
       ContextPool.with_context(context_options(resource), fn ctx ->
-        render(ctx, template, resource, data, input, opts)
+        render(ctx, template, resource, data, input, opts, encoding_context)
       end)
     end
   end
 
-  defp render(ctx, template, resource, data, input, opts) do
+  defp render(ctx, template, resource, data, input, opts, encoding_context) do
     with :ok <- set_template(ctx, template, resource),
          :ok <- set_inputs(ctx, template),
-         :ok <- inject_data(ctx, data, input.arguments, opts),
+         :ok <- inject_data(ctx, data, input.arguments, opts, encoding_context),
          {:ok, compile_result} <- maybe_compile(ctx, opts[:format]) do
       export(ctx, opts[:format], opts, compile_result)
     end
@@ -35,89 +47,86 @@ defmodule AshTypst.Resource.Run do
 
   defp maybe_compile(ctx, _format), do: compile(ctx)
 
-  defp fetch_data(_resource, _input, opts, _context) when not is_map_key(opts, :read) do
-    {:ok, nil}
-  end
+  defp fetch_data(_resource, _input, nil, _context, _template_opts), do: {:ok, :none}
 
-  defp fetch_data(resource, input, opts, context) do
-    case opts[:read] do
-      nil ->
-        {:ok, nil}
+  defp fetch_data(resource, input, read, context, template_opts) do
+    # The query carries the action context itself, see `build_query/5`.
+    read_opts =
+      context
+      |> Ash.Scope.to_opts()
+      |> Keyword.delete(:context)
+      |> Keyword.put_new(:authorize?, true)
 
-      read ->
-        query =
-          resource
-          |> Ash.Query.new()
-          |> apply_read_opts(read, input)
-          |> merge_preparation_context(input)
+    query = build_query(resource, read, input, read_opts, template_opts)
 
-        read_opts = [
-          actor: context.actor,
-          tenant: context.tenant,
-          authorize?: true
-        ]
-
-        case read.cardinality do
-          :one ->
-            query
-            |> Ash.read_one(read_opts)
-            |> handle_not_found(read)
-
-          :many ->
-            Ash.read(query, read_opts)
+    case read.cardinality do
+      :one ->
+        with {:ok, record} <- query |> Ash.read_one(read_opts) |> handle_not_found(read) do
+          {:ok, {:one, record}}
         end
+
+      :many when read.stream_with == :none ->
+        with {:ok, records} <- Ash.read(query, Keyword.put(read_opts, :page, false)) do
+          {:ok, {:all, records}}
+        end
+
+      :many ->
+        stream_opts =
+          Keyword.merge(read_opts,
+            batch_size: read.batch_size,
+            stream_with: read.stream_with || stream_strategy(query.action)
+          )
+
+        {:ok, {:many, query, stream_opts}}
     end
   end
 
-  defp apply_read_opts(query, read, input) do
-    query
-    |> maybe_filter(read.filter, input)
-    |> maybe_load(read.load)
-    |> maybe_select(read[:select])
-    |> maybe_sort(read[:sort])
-    |> maybe_limit(read[:limit])
+  defp build_query(resource, read, input, read_opts, template_opts) do
+    action = read.action || Ash.Resource.Info.primary_action!(resource, :read).name
+    arguments = read.arguments |> Ash.Expr.fill_template(template_opts) |> Map.new()
+
+    resource
+    |> Ash.Query.new()
+    |> Ash.Query.set_context(input.context)
+    |> Ash.Query.for_read(action, arguments, read_opts)
+    |> maybe_filter(read.filter, template_opts)
+    |> maybe_load(read.load, template_opts)
+    |> maybe_select(read.select)
+    |> maybe_sort(read.sort, template_opts)
+    |> maybe_limit(read.limit)
   end
 
-  defp maybe_filter(query, nil, _input), do: query
+  defp maybe_filter(query, nil, _template_opts), do: query
 
-  defp maybe_filter(query, filter, input) do
-    Ash.Query.do_filter(query, resolve_args(filter, input.arguments))
+  defp maybe_filter(query, filter, template_opts) do
+    Ash.Query.do_filter(query, Ash.Expr.fill_template(filter, template_opts))
   end
 
-  defp resolve_args({:_arg, name}, arguments), do: Map.get(arguments, name)
+  defp maybe_load(query, [], _template_opts), do: query
 
-  defp resolve_args(%Ash.Query.Call{args: args} = call, arguments) do
-    %{call | args: Enum.map(args, &resolve_args(&1, arguments))}
+  defp maybe_load(query, load, template_opts) do
+    Ash.Query.load(query, Ash.Expr.fill_template(load, template_opts))
   end
-
-  defp resolve_args(other, _arguments), do: other
-
-  defp maybe_load(query, []), do: query
-  defp maybe_load(query, load), do: Ash.Query.load(query, load)
 
   defp maybe_select(query, nil), do: query
   defp maybe_select(query, select), do: Ash.Query.select(query, select)
 
-  defp maybe_sort(query, nil), do: query
-  defp maybe_sort(query, sort), do: Ash.Query.sort(query, sort)
+  defp maybe_sort(query, nil, _template_opts), do: query
+
+  defp maybe_sort(query, sort, template_opts) do
+    Ash.Query.sort(query, Ash.Expr.fill_template(sort, template_opts))
+  end
 
   defp maybe_limit(query, nil), do: query
   defp maybe_limit(query, limit), do: Ash.Query.limit(query, limit)
 
-  defp merge_preparation_context(query, input) do
-    case input.context do
-      %{} = ctx when map_size(ctx) > 0 -> Ash.Query.set_context(query, ctx)
-      _ -> query
-    end
-  end
-
-  defp handle_not_found({:ok, nil}, %{not_found: :error}) do
-    {:error, NotFound.exception([])}
-  end
+  # `ValidateRead` ensures the action paginates by keyset or offset.
+  defp stream_strategy(%{pagination: %{keyset?: true}}), do: :keyset
+  defp stream_strategy(_action), do: :offset
 
   defp handle_not_found({:ok, nil}, %{not_found: nil}), do: {:ok, nil}
-  defp handle_not_found({:ok, nil}, _), do: {:error, NotFound.exception([])}
-  defp handle_not_found(result, _), do: result
+  defp handle_not_found({:ok, nil}, _read), do: {:error, NotFound.exception([])}
+  defp handle_not_found(result, _read), do: result
 
   defp context_options(resource) do
     {:ok, root} = Info.typst_root(resource)
@@ -152,30 +161,58 @@ defmodule AshTypst.Resource.Run do
     AshTypst.Context.set_inputs(ctx, inputs)
   end
 
-  defp inject_data(ctx, nil, arguments, opts) do
-    data = "#let args = #{AshTypst.Code.encode(Map.new(arguments), %{})}\n"
-    AshTypst.Context.set_virtual_file(ctx, opts[:data_file] || "data.typ", data)
-  end
-
-  defp inject_data(ctx, record, arguments, opts) when not is_list(record) do
-    data =
-      "#let record = #{AshTypst.Code.encode(record, %{})}\n" <>
-        "#let args = #{AshTypst.Code.encode(Map.new(arguments), %{})}\n"
-
-    AshTypst.Context.set_virtual_file(ctx, opts[:data_file] || "data.typ", data)
-  end
-
-  defp inject_data(ctx, records, arguments, opts) when is_list(records) do
-    data_file = opts[:data_file] || "data.typ"
-    batch_size = get_in(opts, [:read, :batch_size]) || 100
-
-    AshTypst.Context.stream_virtual_file(ctx, data_file, records,
-      variable_name: "records",
-      batch_size: batch_size
+  defp inject_data(ctx, :none, arguments, opts, encoding_context) do
+    AshTypst.Context.set_virtual_file(
+      ctx,
+      opts[:data_file] || "data.typ",
+      args_code(arguments, encoding_context)
     )
+  end
 
-    args_code = "#let args = #{AshTypst.Code.encode(Map.new(arguments), %{})}\n"
-    AshTypst.Context.append_virtual_file(ctx, data_file, args_code)
+  defp inject_data(ctx, {:one, record}, arguments, opts, encoding_context) do
+    data =
+      "#let record = #{AshTypst.Code.encode(record, encoding_context)}\n" <>
+        args_code(arguments, encoding_context)
+
+    AshTypst.Context.set_virtual_file(ctx, opts[:data_file] || "data.typ", data)
+  end
+
+  # `stream_with :none`: the records were read in one go, so encode them in one go.
+  defp inject_data(ctx, {:all, records}, arguments, opts, encoding_context) do
+    data =
+      "#let records = #{AshTypst.Code.encode(records, encoding_context)}\n" <>
+        args_code(arguments, encoding_context)
+
+    AshTypst.Context.set_virtual_file(ctx, opts[:data_file] || "data.typ", data)
+  end
+
+  defp inject_data(ctx, {:many, query, stream_opts}, arguments, opts, encoding_context) do
+    data_file = opts[:data_file] || "data.typ"
+
+    with :ok <-
+           AshTypst.Context.stream_virtual_file(ctx, data_file, Ash.stream!(query, stream_opts),
+             variable_name: "records",
+             context: encoding_context,
+             batch_size: stream_opts[:batch_size]
+           ) do
+      AshTypst.Context.append_virtual_file(
+        ctx,
+        data_file,
+        args_code(arguments, encoding_context)
+      )
+    end
+  rescue
+    # `Ash.stream!/2` raises, both up front and while the records are consumed.
+    error ->
+      if Ash.Error.ash_error?(error) do
+        {:error, error}
+      else
+        reraise error, __STACKTRACE__
+      end
+  end
+
+  defp args_code(arguments, encoding_context) do
+    "#let args = #{AshTypst.Code.encode(Map.new(arguments), encoding_context)}\n"
   end
 
   defp compile(ctx) do

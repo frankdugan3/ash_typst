@@ -94,6 +94,7 @@ should be action arguments instead (they reach the template as `args`).
 | `pretty` | boolean | `false` | Human-readable HTML/SVG output (also within bundles) |
 | `render_bleed` | boolean | `false` | Bleed margins for SVG (also within bundles) |
 | `data_file` | string | `"data.typ"` | Virtual file path for injected data |
+| `encoding_context` | map | `%{}` | Context for `AshTypst.Code.encode/2`, used for `args` and the read results, e.g. `%{timezone: arg(:timezone)}`. Values accept `arg/1`, `actor/1`, `tenant/0`, `context/1`; entries resolving to `nil` are dropped |
 | `transaction?` | boolean | `false` | Wrap execution in a transaction |
 
 Nested entities: `argument`, `read` (singleton), `pdf_options` (singleton),
@@ -107,17 +108,50 @@ logs/telemetry only — the value is still injected into `args` in the template.
 
 ### `read cardinality`
 
-`:one` uses `Ash.read_one`, `:many` uses `Ash.read`. Options:
+`:one` uses `Ash.read_one`, `:many` uses `Ash.stream!`. Options:
 
 | Option | Notes |
 | --- | --- |
-| `filter` | Ash expression; `^arg(:name)` references action arguments |
-| `load` | Relationships, calculations, aggregates to load |
-| `select` | Attributes to select (`nil` = all). De-select what the template doesn't use — encoded payload is compile-time overhead |
-| `sort` | Sort specification |
-| `limit` | Max records (`:many` only) |
-| `batch_size` | Streaming batch size, default 100 (`:many` only) |
-| `not_found` | `:error` (default) or `nil` when `:one` finds no record |
+| `action` | Read action to run; defaults to the primary read. Must exist and be a read (compile-time check) |
+| `arguments` | Arguments for the read action, e.g. `%{location_id: arg(:location_id)}`. Keys must be arguments of the action (compile-time check). Templates supported |
+| `filter` | Ash expression. Templates supported: `^arg(:name)`, `^actor(:field)`, `^tenant()`, `^context(:key)`, anywhere in the expression |
+| `load` | Relationships, calculations, aggregates to load. Templates supported in calculation arguments: `load label: %{prefix: arg(:prefix)}` |
+| `select` | Attributes to select (`nil` = all). De-select what the template doesn't use — encoded payload is compile-time overhead. No templates |
+| `sort` | Sort specification. Templates supported in calculation arguments |
+| `limit` | Max records (`:many` only). No templates |
+| `batch_size` | Records fetched and encoded per batch, default 100 (`:many` only, not with `stream_with :none`). Capped at the action's `max_page_size` |
+| `stream_with` | `:keyset \| :offset \| :none` (`:many` only). `:keyset`/`:offset` stream page by page with `Ash.stream!/2`; the action must support that pagination. `:none` opts out: one unpaginated read, every record in memory; the action must not require pagination. Default: `:keyset` if the action has keyset pagination, else `:offset` — never `:none`. All compile-time checked |
+| `not_found` | `:one` only: `:error` (default) returns `Ash.Error.Query.NotFound`; `nil` renders with `record` set to `none` |
+
+Templates outside `expr/1` are written without the pin: `arg(:name)`. An
+`arg` naming an argument the render does not declare is a compile error, as
+are `limit`/`batch_size`/`stream_with` on `:one`, `not_found nil` on
+`:many`, and `batch_size` with `stream_with :none`.
+
+A `nil` argument in a filter compares as `nil`: `location == ^arg(:location)`
+matches no record when the argument is `nil`. Use `is_nil/1` or an `or` branch
+if `nil` should mean "no filter".
+
+#### Streaming and memory
+
+`read :many` is streamed page by page: one page of `batch_size` records is
+fetched, encoded and appended to the data file before the next is fetched, so
+only one page is in memory at a time. It returns every matching record
+(subject to `limit`) regardless of the action's `required?`/`default_limit`.
+
+- The read action **must support pagination**; a `read :many` on an action
+  without it is a compile error. The default `:read` action supports keyset
+  and offset. For a custom action:
+  `pagination keyset?: true, required?: false`.
+- `stream_with :none` opts out explicitly: one unpaginated read (`page:
+  false`), encoded in one go, all records in memory at once. Works on any
+  action that does not set `required?: true`; `batch_size` is rejected.
+  Never chosen by default.
+- Keyset is used when the action supports it, offset otherwise. Prefer
+  keyset: offset pages can shift if records are inserted or deleted during
+  the render.
+- Ash appends a stable sort (primary key, or the action's `stable_sort`) to
+  every page, so no unique `sort` is needed for correct paging.
 
 ### `pdf_options`
 
@@ -138,18 +172,24 @@ shape the read query; note preparation `on` defaults to `[:read]`.
 3. Static template `inputs` are applied as `sys.inputs`.
 4. Data is injected into the `data_file` virtual file:
    - no `read`: `#let args = (...)` only
-   - `read :one`: `#let record = (...)` and `#let args = (...)`
+   - `read :one`: `#let record = (...)` (`none` when nothing was found and
+     `not_found nil`) and `#let args = (...)`
    - `read :many`: `#let records = (...)` streamed in `batch_size` batches,
-     then `args` appended
-5. Reads run with `authorize?: true` and the calling actor/tenant.
+     then `args` appended (with `stream_with :none`, encoded in one go)
+5. Reads run as the caller: actor, tenant, tracer and `authorize?` are passed
+   on (`authorize?` defaults to `true`; `Ash.run_action(input, authorize?:
+   false)` also skips authorization of the read). The context of the render
+   action input, including what its preparations set, is set on the read
+   query.
 6. Compile + export in the declared format. (`:bundle` skips the paged
    pre-compile; `export_bundle` compiles on its own.)
 7. The context returns to the pool scrubbed (virtual files and inputs
    cleared).
 
-Records are encoded with an **empty encoding context** — no timezone shifting.
-`DateTime`s encode in UTC; for localized/timezone-formatted output, use
-calculations (see `multi-language.md`).
+Records and arguments are encoded with the render's `encoding_context`
+(default: empty, so `DateTime`s encode in UTC). Set
+`encoding_context %{timezone: arg(:timezone)}` to shift them; for
+localized/formatted output, use calculations (see `multi-language.md`).
 
 ## Result types
 

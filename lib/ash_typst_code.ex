@@ -157,6 +157,10 @@ defimpl AshTypst.Code, for: Any do
 
     map
     |> Map.take([:calculations, :aggregates] ++ public_keys)
+    |> Map.new(fn
+      {key, value} when key in [:calculations, :aggregates] -> {key, drop_internal(value)}
+      field -> field
+    end)
     |> Map.reject(fn
       {_key, %Ash.NotLoaded{}} -> true
       {_key, %Ash.ForbiddenField{}} -> true
@@ -164,6 +168,15 @@ defimpl AshTypst.Code, for: Any do
       {_key, _value} -> false
     end)
   end
+
+  # Ash stores its own bookkeeping next to the anonymous calculations and
+  # aggregates under tuple keys, e.g. `{:__ash_runtime_sort__, 0}` when a data
+  # layer sorts by a calculation at run time.
+  defp drop_internal(%{} = named) do
+    Map.filter(named, fn {name, _value} -> is_atom(name) or is_binary(name) end)
+  end
+
+  defp drop_internal(other), do: other
 end
 
 defimpl AshTypst.Code, for: Map do

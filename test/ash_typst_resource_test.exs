@@ -536,6 +536,842 @@ defmodule AshTypst.ResourceTest do
         end
       end
     end
+
+    test "ValidateRead catches an undeclared argument in `filter`" do
+      expected = """
+      [AshTypst.ResourceTest.BadFilterArg]
+      typst -> render_doc -> read -> filter defined in <FILE:LINE>:
+        Render :render_doc: `filter` references argument :locaton, but the render action declares no argument with that name. Declared arguments: [:location]
+      │
+      <LINE> │                 filter expr(name == ^arg(:location) and kind == ^arg(:locaton))
+      │                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
+
+      assert_dsl_error expected do
+        defmodule BadFilterArg do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          @derive AshTypst.Code
+
+          actions do
+            defaults [:read]
+
+            read :at_location do
+              argument :location, :string
+            end
+
+            action :not_a_read, :string do
+              run fn _input, _context -> {:ok, "nope"} end
+            end
+          end
+
+          typst do
+            template :doc do
+              markup "= Test"
+            end
+
+            render :render_doc do
+              template :doc
+              format :pdf
+
+              argument :location, :string
+
+              read :many do
+                filter expr(name == ^arg(:location) and kind == ^arg(:locaton))
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "ValidateRead catches an undeclared argument in `load`" do
+      expected = """
+      [AshTypst.ResourceTest.BadLoadArg]
+      typst -> render_doc -> read -> load defined in <FILE:LINE>:
+        Render :render_doc: `load` references argument :prefix, but the render action declares no argument with that name. Declared arguments: [:location]
+      │
+      <LINE> │                 load label: %{prefix: arg(:prefix)}
+      │                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
+
+      assert_dsl_error expected do
+        defmodule BadLoadArg do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          @derive AshTypst.Code
+
+          actions do
+            defaults [:read]
+
+            read :at_location do
+              argument :location, :string
+            end
+
+            action :not_a_read, :string do
+              run fn _input, _context -> {:ok, "nope"} end
+            end
+          end
+
+          typst do
+            template :doc do
+              markup "= Test"
+            end
+
+            render :render_doc do
+              template :doc
+              format :pdf
+
+              argument :location, :string
+
+              read :one do
+                load label: %{prefix: arg(:prefix)}
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "ValidateRead catches an undeclared argument in `sort`" do
+      expected = """
+      [AshTypst.ResourceTest.BadSortArg]
+      typst -> render_doc -> read -> sort defined in <FILE:LINE>:
+        Render :render_doc: `sort` references argument :prefix, but the render action declares no argument with that name. Declared arguments: [:location]
+      │
+      <LINE> │                 sort label: {%{prefix: arg(:prefix)}, :desc}
+      │                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
+
+      assert_dsl_error expected do
+        defmodule BadSortArg do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          @derive AshTypst.Code
+
+          actions do
+            defaults [:read]
+
+            read :at_location do
+              argument :location, :string
+            end
+
+            action :not_a_read, :string do
+              run fn _input, _context -> {:ok, "nope"} end
+            end
+          end
+
+          typst do
+            template :doc do
+              markup "= Test"
+            end
+
+            render :render_doc do
+              template :doc
+              format :pdf
+
+              argument :location, :string
+
+              read :many do
+                sort label: {%{prefix: arg(:prefix)}, :desc}
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "ValidateRead catches an undeclared argument in `arguments`" do
+      expected = """
+      [AshTypst.ResourceTest.BadArgumentsArg]
+      typst -> render_doc -> read -> arguments defined in <FILE:LINE>:
+        Render :render_doc: `arguments` references argument :where, but the render action declares no argument with that name. Declared arguments: [:location]
+      │
+      <LINE> │                 arguments %{location: arg(:where)}
+      │                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
+
+      assert_dsl_error expected do
+        defmodule BadArgumentsArg do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          @derive AshTypst.Code
+
+          actions do
+            defaults [:read]
+
+            read :at_location do
+              argument :location, :string
+            end
+
+            action :not_a_read, :string do
+              run fn _input, _context -> {:ok, "nope"} end
+            end
+          end
+
+          typst do
+            template :doc do
+              markup "= Test"
+            end
+
+            render :render_doc do
+              template :doc
+              format :pdf
+
+              argument :location, :string
+
+              read :many do
+                action :at_location
+                arguments %{location: arg(:where)}
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "ValidateRead catches an undeclared argument in `encoding_context`" do
+      expected = """
+      [AshTypst.ResourceTest.BadEncodingContextArg]
+      typst -> render_doc -> encoding_context defined in <FILE:LINE>:
+        Render :render_doc: `encoding_context` references argument :timezone, but the render action declares no argument with that name. Declared arguments: [:location]
+      │
+      <LINE> │               encoding_context %{timezone: arg(:timezone)}
+      │               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
+
+      assert_dsl_error expected do
+        defmodule BadEncodingContextArg do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          @derive AshTypst.Code
+
+          actions do
+            defaults [:read]
+
+            read :at_location do
+              argument :location, :string
+            end
+
+            action :not_a_read, :string do
+              run fn _input, _context -> {:ok, "nope"} end
+            end
+          end
+
+          typst do
+            template :doc do
+              markup "= Test"
+            end
+
+            render :render_doc do
+              template :doc
+              format :pdf
+
+              argument :location, :string
+
+              encoding_context %{timezone: arg(:timezone)}
+            end
+          end
+        end
+      end
+    end
+
+    test "ValidateRead catches an unknown read action" do
+      expected = """
+      [AshTypst.ResourceTest.UnknownReadAction]
+      typst -> render_doc -> read -> action defined in <FILE:LINE>:
+        Render :render_doc: `read` uses action :nonexistent, but AshTypst.ResourceTest.UnknownReadAction has no action with that name.
+      │
+      <LINE> │                 action :nonexistent
+      │                 ~~~~~~~~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
+
+      assert_dsl_error expected do
+        defmodule UnknownReadAction do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          @derive AshTypst.Code
+
+          actions do
+            defaults [:read]
+
+            read :at_location do
+              argument :location, :string
+            end
+
+            action :not_a_read, :string do
+              run fn _input, _context -> {:ok, "nope"} end
+            end
+          end
+
+          typst do
+            template :doc do
+              markup "= Test"
+            end
+
+            render :render_doc do
+              template :doc
+              format :pdf
+
+              argument :location, :string
+
+              read :many do
+                action :nonexistent
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "ValidateRead catches an action that is not a read" do
+      expected = """
+      [AshTypst.ResourceTest.NotAReadAction]
+      typst -> render_doc -> read -> action defined in <FILE:LINE>:
+        Render :render_doc: `read` uses action :not_a_read, but its type is :action. Only read actions are supported.
+      │
+      <LINE> │                 action :not_a_read
+      │                 ~~~~~~~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
+
+      assert_dsl_error expected do
+        defmodule NotAReadAction do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          @derive AshTypst.Code
+
+          actions do
+            defaults [:read]
+
+            read :at_location do
+              argument :location, :string
+            end
+
+            action :not_a_read, :string do
+              run fn _input, _context -> {:ok, "nope"} end
+            end
+          end
+
+          typst do
+            template :doc do
+              markup "= Test"
+            end
+
+            render :render_doc do
+              template :doc
+              format :pdf
+
+              argument :location, :string
+
+              read :many do
+                action :not_a_read
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "ValidateRead catches an argument the read action does not accept" do
+      expected = """
+      [AshTypst.ResourceTest.BadReadArgument]
+      typst -> render_doc -> read -> arguments defined in <FILE:LINE>:
+        Render :render_doc: `arguments` sets :place, but read action :at_location accepts no argument with that name. Accepted arguments: [:location]
+      │
+      <LINE> │                 arguments %{place: arg(:location)}
+      │                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
+
+      assert_dsl_error expected do
+        defmodule BadReadArgument do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          @derive AshTypst.Code
+
+          actions do
+            defaults [:read]
+
+            read :at_location do
+              argument :location, :string
+            end
+
+            action :not_a_read, :string do
+              run fn _input, _context -> {:ok, "nope"} end
+            end
+          end
+
+          typst do
+            template :doc do
+              markup "= Test"
+            end
+
+            render :render_doc do
+              template :doc
+              format :pdf
+
+              argument :location, :string
+
+              read :many do
+                action :at_location
+                arguments %{place: arg(:location)}
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "ValidateFormatOptions catches `not_found` on a `:many` read" do
+      expected = """
+      [AshTypst.ResourceTest.ManyNotFound]
+      typst -> render_doc -> read -> not_found defined in <FILE:LINE>:
+        Render :render_doc: `read :many` does not support `not_found`.
+      │
+      <LINE> │                 not_found nil
+      │                 ~~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
+
+      assert_dsl_error expected do
+        defmodule ManyNotFound do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          @derive AshTypst.Code
+
+          actions do
+            defaults [:read]
+
+            read :at_location do
+              argument :location, :string
+            end
+
+            action :not_a_read, :string do
+              run fn _input, _context -> {:ok, "nope"} end
+            end
+          end
+
+          typst do
+            template :doc do
+              markup "= Test"
+            end
+
+            render :render_doc do
+              template :doc
+              format :pdf
+
+              argument :location, :string
+
+              read :many do
+                not_found nil
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "ValidateFormatOptions catches `limit` on a `:one` read" do
+      expected = """
+      [AshTypst.ResourceTest.OneLimit]
+      typst -> render_doc -> read -> limit defined in <FILE:LINE>:
+        Render :render_doc: `read :one` does not support `limit`.
+      │
+      <LINE> │                 limit 5
+      │                 ~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
+
+      assert_dsl_error expected do
+        defmodule OneLimit do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          @derive AshTypst.Code
+
+          actions do
+            defaults [:read]
+
+            read :at_location do
+              argument :location, :string
+            end
+
+            action :not_a_read, :string do
+              run fn _input, _context -> {:ok, "nope"} end
+            end
+          end
+
+          typst do
+            template :doc do
+              markup "= Test"
+            end
+
+            render :render_doc do
+              template :doc
+              format :pdf
+
+              argument :location, :string
+
+              read :one do
+                limit 5
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "ValidateFormatOptions catches `batch_size` on a `:one` read" do
+      expected = """
+      [AshTypst.ResourceTest.OneBatchSize]
+      typst -> render_doc -> read -> batch_size defined in <FILE:LINE>:
+        Render :render_doc: `read :one` does not support `batch_size`.
+      │
+      <LINE> │                 batch_size 50
+      │                 ~~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
+
+      assert_dsl_error expected do
+        defmodule OneBatchSize do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          @derive AshTypst.Code
+
+          actions do
+            defaults [:read]
+
+            read :at_location do
+              argument :location, :string
+            end
+
+            action :not_a_read, :string do
+              run fn _input, _context -> {:ok, "nope"} end
+            end
+          end
+
+          typst do
+            template :doc do
+              markup "= Test"
+            end
+
+            render :render_doc do
+              template :doc
+              format :pdf
+
+              argument :location, :string
+
+              read :one do
+                batch_size 50
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "ValidateFormatOptions catches `stream_with` on a `:one` read" do
+      expected = """
+      [AshTypst.ResourceTest.OneStreamWith]
+      typst -> render_doc -> read -> stream_with defined in <FILE:LINE>:
+        Render :render_doc: `read :one` does not support `stream_with`.
+      │
+      <LINE> │                 stream_with :keyset
+      │                 ~~~~~~~~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
+
+      assert_dsl_error expected do
+        defmodule OneStreamWith do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          @derive AshTypst.Code
+
+          actions do
+            defaults [:read]
+
+            read :at_location do
+              argument :location, :string
+            end
+
+            action :not_a_read, :string do
+              run fn _input, _context -> {:ok, "nope"} end
+            end
+          end
+
+          typst do
+            template :doc do
+              markup "= Test"
+            end
+
+            render :render_doc do
+              template :doc
+              format :pdf
+
+              argument :location, :string
+
+              read :one do
+                stream_with :keyset
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "ValidateRead catches a `:many` read whose action has no pagination" do
+      expected = """
+      [AshTypst.ResourceTest.UnpaginatedMany]
+      typst -> render_doc -> read -> action defined in <FILE:LINE>:
+        Render :render_doc: `read :many` streams its records page by page, but read action :unpaginated has no pagination. Add `pagination keyset?: true, required?: false` to the action, or set `stream_with :none` on the `read` to read every record at once.
+      │
+      <LINE> │                 action :unpaginated
+      │                 ~~~~~~~~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
+
+      assert_dsl_error expected do
+        defmodule UnpaginatedMany do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          @derive AshTypst.Code
+
+          actions do
+            defaults [:read]
+            read :unpaginated
+          end
+
+          typst do
+            template :doc do
+              markup "= Test"
+            end
+
+            render :render_doc do
+              template :doc
+              format :pdf
+
+              read :many do
+                action :unpaginated
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "ValidateRead catches a `stream_with` the action's pagination does not support" do
+      expected = """
+      [AshTypst.ResourceTest.UnsupportedStreamWith]
+      typst -> render_doc -> read -> stream_with defined in <FILE:LINE>:
+        Render :render_doc: `stream_with :keyset` needs keyset pagination, but read action :by_offset does not support it. Add `keyset?: true` to the action's `pagination`, or set `stream_with :none` to read every record at once.
+      │
+      <LINE> │                 stream_with :keyset
+      │                 ~~~~~~~~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
+
+      assert_dsl_error expected do
+        defmodule UnsupportedStreamWith do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          @derive AshTypst.Code
+
+          actions do
+            defaults [:read]
+
+            read :by_offset do
+              pagination offset?: true, required?: false
+            end
+          end
+
+          typst do
+            template :doc do
+              markup "= Test"
+            end
+
+            render :render_doc do
+              template :doc
+              format :pdf
+
+              read :many do
+                action :by_offset
+                stream_with :keyset
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "ValidateRead catches `stream_with :none` on an action that requires pagination" do
+      expected = """
+      [AshTypst.ResourceTest.NoneWithRequiredPagination]
+      typst -> render_doc -> read -> stream_with defined in <FILE:LINE>:
+        Render :render_doc: `stream_with :none` reads every record in one unpaginated read, but read action :paged requires pagination. Stream the records with `stream_with :keyset` instead.
+      │
+      <LINE> │                 stream_with :none
+      │                 ~~~~~~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
+
+      assert_dsl_error expected do
+        defmodule NoneWithRequiredPagination do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          @derive AshTypst.Code
+
+          actions do
+            defaults [:read]
+
+            read :paged do
+              pagination keyset?: true, required?: true
+            end
+          end
+
+          typst do
+            template :doc do
+              markup "= Test"
+            end
+
+            render :render_doc do
+              template :doc
+              format :pdf
+
+              read :many do
+                action :paged
+                stream_with :none
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "ValidateFormatOptions catches `batch_size` with `stream_with :none`" do
+      expected = """
+      [AshTypst.ResourceTest.NoneBatchSize]
+      typst -> render_doc -> read -> batch_size defined in <FILE:LINE>:
+        Render :render_doc: `stream_with :none` does not support `batch_size`.
+      │
+      <LINE> │                 batch_size 50
+      │                 ~~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
+
+      assert_dsl_error expected do
+        defmodule NoneBatchSize do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          @derive AshTypst.Code
+
+          actions do
+            defaults [:read]
+          end
+
+          typst do
+            template :doc do
+              markup "= Test"
+            end
+
+            render :render_doc do
+              template :doc
+              format :pdf
+
+              read :many do
+                stream_with :none
+                batch_size 50
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "a `:one` read does not need pagination" do
+      defmodule UnpaginatedOne do
+        use Ash.Resource,
+          domain: AshTypst.ResourceTest.TestDomain,
+          extensions: [AshTypst.Resource]
+
+        @derive AshTypst.Code
+
+        actions do
+          defaults [:read]
+          read :unpaginated
+        end
+
+        typst do
+          template :doc do
+            markup "= Test"
+          end
+
+          render :render_doc do
+            template :doc
+            format :pdf
+
+            read :one do
+              action :unpaginated
+            end
+          end
+        end
+      end
+
+      assert UnpaginatedOne.__info__(:module) == UnpaginatedOne
+    end
   end
 
   describe "file-based template" do

@@ -125,13 +125,14 @@ defmodule AshTypst.MixProject do
       {:mix_audit, ">= 0.0.0", only: :test, runtime: false},
       {:mix_watch_docs, ">= 0.0.0", only: [:dev, :test], runtime: false},
       {:tzdata, "~> 1.1", only: :test},
+      {:simple_sat, "~> 0.1", only: [:dev, :test]},
       {:mix_test_watch, "~> 1.2", only: :test},
       {:git_ops, "~> 2.7", only: :dev},
       {:usage_rules, "~> 1.1", only: :dev},
       {:igniter, "~> 0.6", optional: true},
       {:rustler, "~> 0.35", optional: true},
       {:sourceror, "~> 1.7", optional: true},
-      {:ash, "~> 3.0"},
+      {:ash, "~> 3.5 and >= 3.5.15"},
       {:decimal, "~> 3.0"},
       {:rustler_precompiled, "~> 0.8"}
     ]

@@ -89,6 +89,19 @@ template can `#import`:
 - **Read `:one`**: both `record` (the single resource) and `args` are available.
 - **Read `:many`**: `records` (an array, streamed in batches) and `args` are available.
 
+A `read :one` with `not_found nil` that finds nothing sets `record` to `none`.
+
+The read runs as the caller: the actor, tenant, tracer and `authorize?` of the
+render action are passed on to it (`authorize?` defaults to `true`). It uses
+the primary read action unless the `read` names another `action`, and its
+`filter`, `load`, `sort` and `arguments` accept the `arg/1`, `actor/1`,
+`tenant/0` and `context/1` templates. A `read :many` is streamed with
+`Ash.stream!/2`; see `AshTypst.Resource.Render.Read` for how the records are
+fetched and what that means for memory use.
+
+Values are encoded with an empty context unless the render sets
+`encoding_context`, e.g. `encoding_context %{timezone: arg(:timezone)}`.
+
 Any render action that declares a `read` encodes the fetched resource records
 via the `AshTypst.Code` protocol, so the resource must opt in by adding
 `@derive AshTypst.Code` (see the usage example above). Deriving serializes the
@@ -193,6 +206,7 @@ Declares a Typst template rendering action.
 | [`pretty`](#typst-render-pretty){: #typst-render-pretty } | `boolean` | `false` | Format HTML/SVG output (also within bundles) in a human-readable way. |
 | [`render_bleed`](#typst-render-render_bleed){: #typst-render-render_bleed } | `boolean` | `false` | Include bleed margins for SVG output (also within bundles). |
 | [`data_file`](#typst-render-data_file){: #typst-render-data_file } | `String.t` | `"data.typ"` | Virtual file path for serialized data. |
+| [`encoding_context`](#typst-render-encoding_context){: #typst-render-encoding_context } | `map` | `%{}` | Context passed to `AshTypst.Code.encode/2` for the arguments and the read results, e.g. `%{timezone: arg(:timezone)}`. Values support `arg/1`, `actor/1`, `tenant/0` and `context/1`; entries that resolve to `nil` are dropped. |
 | [`transaction?`](#typst-render-transaction?){: #typst-render-transaction? } | `boolean` | `false` | Wrap action execution in a transaction. |
 
 
@@ -249,18 +263,21 @@ Declares how to fetch resource data to pass to the template.
 
 | Name | Type | Default | Docs |
 |------|------|---------|------|
-| [`cardinality`](#typst-render-read-cardinality){: #typst-render-read-cardinality .spark-required} | `:one \| :many` |  | `:one` uses `Ash.read_one`, `:many` uses `Ash.read`. |
+| [`cardinality`](#typst-render-read-cardinality){: #typst-render-read-cardinality .spark-required} | `:one \| :many` |  | `:one` uses `Ash.read_one`, `:many` uses `Ash.stream!`. |
 ### Options
 
 | Name | Type | Default | Docs |
 |------|------|---------|------|
-| [`filter`](#typst-render-read-filter){: #typst-render-read-filter } | `any` |  | Ash filter expression; supports `^arg(:name)` to reference action arguments. |
-| [`load`](#typst-render-read-load){: #typst-render-read-load } | `list(any)` | `[]` | Relationships, calculations, and aggregates to load. |
-| [`select`](#typst-render-read-select){: #typst-render-read-select } | `list(atom)` |  | Attributes to select (nil = all). |
-| [`sort`](#typst-render-read-sort){: #typst-render-read-sort } | `any` |  | Sort specification. |
-| [`limit`](#typst-render-read-limit){: #typst-render-read-limit } | `pos_integer` |  | Max records to return (`:many` only). |
-| [`batch_size`](#typst-render-read-batch_size){: #typst-render-read-batch_size } | `pos_integer` | `100` | Batch size for streaming large datasets into virtual file (`:many` only). |
-| [`not_found`](#typst-render-read-not_found){: #typst-render-read-not_found } | `:error \| nil` | `:error` | Behavior when `:one` finds no record. |
+| [`action`](#typst-render-read-action){: #typst-render-read-action } | `atom` |  | The read action to run. Defaults to the primary read action. |
+| [`arguments`](#typst-render-read-arguments){: #typst-render-read-arguments } | `map \| keyword` | `%{}` | Arguments for the read action, e.g. `%{location_id: arg(:location_id)}`. Values support `arg/1`, `actor/1`, `tenant/0` and `context/1`. |
+| [`filter`](#typst-render-read-filter){: #typst-render-read-filter } | `any` |  | Ash filter expression; supports `^arg(:name)`, `^actor(:field)`, `^tenant()` and `^context(:key)`. |
+| [`load`](#typst-render-read-load){: #typst-render-read-load } | `list(any)` | `[]` | Relationships, calculations, and aggregates to load. Calculation arguments support `arg/1`, `actor/1`, `tenant/0` and `context/1`. |
+| [`select`](#typst-render-read-select){: #typst-render-read-select } | `list(atom)` |  | Attributes to select (nil = all). Does not support templates. |
+| [`sort`](#typst-render-read-sort){: #typst-render-read-sort } | `any` |  | Sort specification. Calculation arguments support `arg/1`, `actor/1`, `tenant/0` and `context/1`. |
+| [`limit`](#typst-render-read-limit){: #typst-render-read-limit } | `pos_integer` |  | Max records to return (`:many` only). Does not support templates. |
+| [`batch_size`](#typst-render-read-batch_size){: #typst-render-read-batch_size } | `pos_integer` | `100` | How many records are fetched and encoded into the virtual file at a time (`:many` only, not with `stream_with :none`). Capped at the `max_page_size` of the read action. |
+| [`stream_with`](#typst-render-read-stream_with){: #typst-render-read-stream_with } | `:keyset \| :offset \| :none` |  | How the records are fetched (`:many` only). `:keyset` and `:offset` stream them page by page with `Ash.stream!/2`, and the read action must support that pagination type. `:none` opts out of streaming: one unpaginated read, encoded in one go, so every record is in memory at once; the read action must not require pagination, and `batch_size` is not supported. Defaults to `:keyset` if the read action supports keyset pagination, and `:offset` otherwise; it never defaults to `:none`. All checked at compile time. |
+| [`not_found`](#typst-render-read-not_found){: #typst-render-read-not_found } | `:error \| nil` | `:error` | Behavior when `:one` finds no record: `:error` returns an `Ash.Error.Query.NotFound`, `nil` renders with `record` set to `none`. |
 
 
 

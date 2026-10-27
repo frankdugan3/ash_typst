@@ -18,6 +18,7 @@ defmodule AshTypst.Resource.Render do
     pretty: false,
     render_bleed: false,
     data_file: "data.typ",
+    encoding_context: %{},
     transaction?: false,
     arguments: [],
     read: [],
@@ -65,6 +66,12 @@ defmodule AshTypst.Resource.Render do
       type: :string,
       default: "data.typ",
       doc: "Virtual file path for serialized data."
+    ],
+    encoding_context: [
+      type: :map,
+      default: %{},
+      doc:
+        "Context passed to `AshTypst.Code.encode/2` for the arguments and the read results, e.g. `%{timezone: arg(:timezone)}`. Values support `arg/1`, `actor/1`, `tenant/0` and `context/1`; entries that resolve to `nil` are dropped."
     ],
     transaction?: [
       type: :boolean,

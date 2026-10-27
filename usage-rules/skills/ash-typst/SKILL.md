@@ -108,6 +108,12 @@ instead of `record` for `read :many`; only `args` when there is no `read`).
   relative string paths.
 - For large `:many` datasets, de-select unused columns — encoded output is
   Typst source the compiler parses on every compile.
+- `read :many` streams page by page, so its read action must support
+  pagination (compile error otherwise). Default `:read` actions do; give a
+  custom read action `pagination keyset?: true, required?: false`, or opt
+  out of streaming explicitly with `stream_with :none`.
+- Render names share the action namespace: a `render :report` and a
+  `read :report` action on the same resource collide.
 
 ## References
 

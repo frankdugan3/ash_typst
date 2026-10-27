@@ -221,7 +221,10 @@ For documents rendering thousands of records, four levers matter:
 1. **Stream the data.** `AshTypst.Context.stream_virtual_file/4` encodes an
    enumerable into the virtual file in batches, so Elixir memory stays flat
    regardless of dataset size. Render actions with `:many` cardinality
-   stream automatically (`batch_size` is configurable on the `read` block).
+   stream automatically: the records are fetched one page of `batch_size`
+   at a time and encoded before the next page is fetched. This needs a read
+   action with pagination (the default `:read` action has it); see
+   `AshTypst.Resource.Render.Read`.
 2. **De-select what the template doesn't use.** Encoded output is Typst
    source the compiler parses and evaluates on every compile — unused
    columns are pure overhead, multiplied by row count. Use `select` in the
