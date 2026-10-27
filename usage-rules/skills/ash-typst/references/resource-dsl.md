@@ -96,6 +96,7 @@ should be action arguments instead (they reach the template as `args`).
 | `data_file` | string | `"data.typ"` | Virtual file path for injected data |
 | `encoding_context` | map | `%{}` | Context for `AshTypst.Code.encode/2`, used for `args` and the read results, e.g. `%{timezone: arg(:timezone)}`. Values accept `arg/1`, `actor/1`, `tenant/0`, `context/1`; entries resolving to `nil` are dropped |
 | `transaction?` | boolean | `false` | Wrap execution in a transaction |
+| `isolate?` | boolean | `false` | Compile and export in a throwaway OS process (`AshTypst.Isolated`); a streamed read runs from a task. Rejected with `transaction? true` and a streamed read |
 
 Nested entities: `argument`, `read` (singleton), `pdf_options` (singleton),
 `prepare`, `validate`.
@@ -120,7 +121,7 @@ logs/telemetry only — the value is still injected into `args` in the template.
 | `sort` | Sort specification. Templates supported in calculation arguments |
 | `limit` | Max records (`:many` only). No templates |
 | `batch_size` | Records fetched and encoded per batch, default 100 (`:many` only, not with `stream_with :none`). Capped at the action's `max_page_size` |
-| `stream_with` | `:keyset \| :offset \| :none` (`:many` only). `:keyset`/`:offset` stream page by page with `Ash.stream!/2`; the action must support that pagination. `:none` opts out: one unpaginated read, every record in memory; the action must not require pagination. Default: `:keyset` if the action has keyset pagination, else `:offset` — never `:none`. All compile-time checked |
+| `stream_with` | `:keyset \| :offset \| :none` (`:many` only). `:keyset`/`:offset` stream page by page with `Ash.stream!/2`; the action must support that pagination. `:none`: one unpaginated read, every record in memory; the action must not require pagination. **Required for `:many`** (no default), rejected on `:one`. All compile-time checked |
 | `not_found` | `:one` only: `:error` (default) returns `Ash.Error.Query.NotFound`; `nil` renders with `record` set to `none` |
 
 Templates outside `expr/1` are written without the pin: `arg(:name)`. An
@@ -134,22 +135,37 @@ if `nil` should mean "no filter".
 
 #### Streaming and memory
 
-`read :many` is streamed page by page: one page of `batch_size` records is
-fetched, encoded and appended to the data file before the next is fetched, so
-only one page is in memory at a time. It returns every matching record
-(subject to `limit`) regardless of the action's `required?`/`default_limit`.
+`read :many` must set `stream_with`; there is no default, and a missing or
+unsupported choice is a compile error that lists what the read action
+supports.
 
-- The read action **must support pagination**; a `read :many` on an action
-  without it is a compile error. The default `:read` action supports keyset
-  and offset. For a custom action:
-  `pagination keyset?: true, required?: false`.
-- `stream_with :none` opts out explicitly: one unpaginated read (`page:
-  false`), encoded in one go, all records in memory at once. Works on any
-  action that does not set `required?: true`; `batch_size` is rejected.
-  Never chosen by default.
-- Keyset is used when the action supports it, offset otherwise. Prefer
-  keyset: offset pages can shift if records are inserted or deleted during
-  the render.
+- `stream_with :keyset` / `:offset`: streamed page by page. One page of
+  `batch_size` records is fetched, encoded and appended to the data file
+  before the next is fetched, so only one page is in memory at a time. The
+  read action must support that pagination; the default `:read` action
+  supports both. For a custom action:
+  `pagination keyset?: true, required?: false`. Every matching record is
+  returned (subject to `limit`) regardless of the action's
+  `required?`/`default_limit`.
+- `stream_with :none`: one unpaginated read (`page: false`), encoded in one
+  go, all records in memory at once. Works on any action that does not set
+  `required?: true`; `batch_size` and `preflight?` are rejected.
+- Prefer `:keyset`: offset pages can shift if records are inserted or
+  deleted during the render.
+- Typst's own memory is the real cost: roughly 14× the data file to parse,
+  7× for the evaluated records and ~100× for the laid-out pages, held in a
+  memoization cache shared by the whole VM. After a streamed render
+  (success, error or raise) the whole cache is evicted and trimmed back to
+  the OS with `AshTypst.evict_cache/1`; the next render of any template
+  starts cold. Fonts, template files and assets are kept. `stream_with
+  :none`, `:one` and read-less renders keep the cache.
+- Eviction lowers what stays resident, not the peak. If the peak may not
+  fit, set `isolate? true` on the render: Typst runs in a peer OS process
+  that exits afterwards, and the records stream from a task whose heap is
+  freed when it exits. The read then runs outside the caller's process:
+  `private? true` ETS tables appear empty and it can't join the render's
+  transaction (`transaction? true` with a streamed read is a compile
+  error).
 - Ash appends a stable sort (primary key, or the action's `stable_sort`) to
   every page, so no unique `sort` is needed for correct paging.
 

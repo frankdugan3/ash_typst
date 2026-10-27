@@ -34,3 +34,6 @@ typst-html = "0.15"
 typst-svg = "0.15"
 typst-timing = "0.15"
 typst-bundle = "0.15"
+
+[target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
+libc = "0.2"

@@ -87,7 +87,7 @@ template can `#import`:
 
 - **No read**: only `args` (a dictionary of action arguments) is available.
 - **Read `:one`**: both `record` (the single resource) and `args` are available.
-- **Read `:many`**: `records` (an array, streamed in batches) and `args` are available.
+- **Read `:many`**: `records` (an array) and `args` are available.
 
 A `read :one` with `not_found nil` that finds nothing sets `record` to `none`.
 
@@ -95,9 +95,10 @@ The read runs as the caller: the actor, tenant, tracer and `authorize?` of the
 render action are passed on to it (`authorize?` defaults to `true`). It uses
 the primary read action unless the `read` names another `action`, and its
 `filter`, `load`, `sort` and `arguments` accept the `arg/1`, `actor/1`,
-`tenant/0` and `context/1` templates. A `read :many` is streamed with
-`Ash.stream!/2`; see `AshTypst.Resource.Render.Read` for how the records are
-fetched and what that means for memory use.
+`tenant/0` and `context/1` templates. A `read :many` must choose with
+`stream_with` whether its records are streamed page by page (`:keyset` or
+`:offset`) or read at once (`:none`); see `AshTypst.Resource.Render.Read`
+for what that means for memory use.
 
 Values are encoded with an empty context unless the render sets
 `encoding_context`, e.g. `encoding_context %{timezone: arg(:timezone)}`.
@@ -208,6 +209,7 @@ Declares a Typst template rendering action.
 | [`data_file`](#typst-render-data_file){: #typst-render-data_file } | `String.t` | `"data.typ"` | Virtual file path for serialized data. |
 | [`encoding_context`](#typst-render-encoding_context){: #typst-render-encoding_context } | `map` | `%{}` | Context passed to `AshTypst.Code.encode/2` for the arguments and the read results, e.g. `%{timezone: arg(:timezone)}`. Values support `arg/1`, `actor/1`, `tenant/0` and `context/1`; entries that resolve to `nil` are dropped. |
 | [`transaction?`](#typst-render-transaction?){: #typst-render-transaction? } | `boolean` | `false` | Wrap action execution in a transaction. |
+| [`isolate?`](#typst-render-isolate?){: #typst-render-isolate? } | `boolean` | `false` | Compile and export in a separate OS process that exits after the render, so its memory is returned to the OS in full, and running out of memory fails the render instead of the VM. Records are still read and encoded in the calling process. Costs starting a peer node and scanning fonts for every render. See `AshTypst.Isolated`. |
 
 
 ### typst.render.argument
@@ -276,7 +278,7 @@ Declares how to fetch resource data to pass to the template.
 | [`sort`](#typst-render-read-sort){: #typst-render-read-sort } | `any` |  | Sort specification. Calculation arguments support `arg/1`, `actor/1`, `tenant/0` and `context/1`. |
 | [`limit`](#typst-render-read-limit){: #typst-render-read-limit } | `pos_integer` |  | Max records to return (`:many` only). Does not support templates. |
 | [`batch_size`](#typst-render-read-batch_size){: #typst-render-read-batch_size } | `pos_integer` | `100` | How many records are fetched and encoded into the virtual file at a time (`:many` only, not with `stream_with :none`). Capped at the `max_page_size` of the read action. |
-| [`stream_with`](#typst-render-read-stream_with){: #typst-render-read-stream_with } | `:keyset \| :offset \| :none` |  | How the records are fetched (`:many` only). `:keyset` and `:offset` stream them page by page with `Ash.stream!/2`, and the read action must support that pagination type. `:none` opts out of streaming: one unpaginated read, encoded in one go, so every record is in memory at once; the read action must not require pagination, and `batch_size` is not supported. Defaults to `:keyset` if the read action supports keyset pagination, and `:offset` otherwise; it never defaults to `:none`. All checked at compile time. |
+| [`stream_with`](#typst-render-read-stream_with){: #typst-render-read-stream_with } | `:keyset \| :offset \| :none` |  | How the records are fetched. Required for `:many`, not allowed for `:one`. `:keyset` and `:offset` stream them page by page with `Ash.stream!/2`, and the read action must support that pagination type. `:none` reads them in one unpaginated read, encoded in one go, so every record is in memory at once; the read action must not require pagination, and `batch_size` is not supported. There is no default, so the choice is always visible in the DSL. All checked at compile time. |
 | [`preflight?`](#typst-render-read-preflight?){: #typst-render-read-preflight? } | `boolean` | `true` | Compile the template against the first page of records before streaming the rest, so a template error is returned before the full data is fetched (`:many` only, not with `stream_with :none`). Costs one extra page read and one compile of that page. |
 | [`not_found`](#typst-render-read-not_found){: #typst-render-read-not_found } | `:error \| nil` | `:error` | Behavior when `:one` finds no record: `:error` returns an `Ash.Error.Query.NotFound`, `nil` renders with `record` set to `none`. |
 

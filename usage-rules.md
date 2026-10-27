@@ -37,6 +37,7 @@ source with string interpolation.
 | Rendering documents from Ash resource data | `AshTypst.Resource` render actions |
 | Request-scoped rendering without Ash (e.g. preview endpoint) | `AshTypst.ContextPool.with_context/2` |
 | Long-lived session (editor holding state across renders) | Dedicated `AshTypst.Context`, re-set only what changed |
+| Very large document whose peak memory must stay out of the VM | `AshTypst.Isolated.with_context/2` (or `isolate? true` on a render) |
 
 ## Direct context lifecycle
 
@@ -100,7 +101,7 @@ input = Ash.ActionInput.for_action(MyApp.Invoice, :generate_pdf, %{invoice_id: "
 
 Data is injected into a virtual `data.typ` the template imports:
 `#import "data.typ": record, args`. Available bindings: `args` always; `record`
-with `read :one`; `records` (streamed array) with `read :many`.
+with `read :one`; `records` (an array) with `read :many`.
 
 - `filter`, `load`, `sort` and `arguments` in a `read` accept Ash templates:
   `^arg(:name)`, `^actor(:field)`, `^tenant()`, `^context(:key)` inside
@@ -109,13 +110,21 @@ with `read :one`; `records` (streamed array) with `read :many`.
   An `arg` that names an undeclared argument is a compile error.
 - `read` uses the primary read action; set `action` (and `arguments`) to run
   another one.
-- `read :many` is streamed page by page with `Ash.stream!/2`, so its read
-  action **must support pagination** (compile-time check). Default `:read`
-  actions do; for a custom action add
-  `pagination keyset?: true, required?: false`. Keyset is used when
-  available, offset otherwise; override with `stream_with`. To opt out of
-  streaming and read every record at once, set `stream_with :none`
-  explicitly (never a default).
+- `read :many` **requires `stream_with`** — there is no default.
+  `:keyset`/`:offset` stream page by page with `Ash.stream!/2` and need that
+  pagination on the read action (default `:read` actions have both; for a
+  custom action add `pagination keyset?: true, required?: false`). `:none`
+  reads every record in one unpaginated read. Compile-time checked against
+  the action. Prefer `:keyset` for large results.
+- Typst needs ~100× the data file size in memory to lay out a document. A
+  streamed render evicts Typst's VM-wide memoization cache when it ends
+  (success, error or raise) and returns the memory to the OS; the next
+  render starts with a cold cache. Fonts, templates and assets are kept.
+- `isolate? true` on a render runs Typst in a throwaway OS process
+  (`AshTypst.Isolated`), so the peak never lands in the VM, and streams the
+  records from a task. The read then runs outside the caller's process:
+  `private? true` ETS tables look empty, and `transaction? true` with a
+  streamed read is a compile error.
 - Set `encoding_context` on the render to pass an encoding context, e.g.
   `encoding_context %{timezone: arg(:timezone)}`.
 

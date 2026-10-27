@@ -18,6 +18,7 @@ spark_locals_without_parens = [
   format: 1,
   ignore_system_fonts: 1,
   inputs: 1,
+  isolate?: 1,
   limit: 1,
   load: 1,
   markup: 1,

@@ -216,27 +216,10 @@ with a `none` default handles both cases with one idiom.
 
 ## Large documents
 
-For documents rendering thousands of records, four levers matter:
-
-1. **Stream the data.** `AshTypst.Context.stream_virtual_file/4` encodes an
-   enumerable into the virtual file in batches, so Elixir memory stays flat
-   regardless of dataset size. Render actions with `:many` cardinality
-   stream automatically: the records are fetched one page of `batch_size`
-   at a time and encoded before the next page is fetched. This needs a read
-   action with pagination (the default `:read` action has it); see
-   `AshTypst.Resource.Render.Read`.
-2. **De-select what the template doesn't use.** Encoded output is Typst
-   source the compiler parses and evaluates on every compile — unused
-   columns are pure overhead, multiplied by row count. Use `select` in the
-   render action's `read` block (or `Ash.Query.select/2`) to keep the
-   payload minimal.
-3. **Let the template do the aggregation it can't avoid, and the query do
-   the rest.** Sums and counts your data layer can compute (Ash aggregates)
-   are cheaper there than in template code iterating a huge array.
-4. **Release the memoization cache after large one-off renders.** Typst
-   memoizes compilation in a process-wide cache that keeps the results of
-   the last ten compilations, so a large document's layout stays in memory
-   after its render returns, and distinct large documents (each with its own
-   id or timestamp) add up. Call `AshTypst.evict_cache/0` after such renders,
-   for example at the end of a background export job. This releases memory
-   between renders; it does not lower the peak of a single render.
+Documents with thousands of pages need gigabytes of memory to lay out,
+far more than the size of their data. In short: render them with a
+streamed `read :many`, `select` only the fields the template uses, and
+aggregate in the query rather than in template code. For where the memory
+goes, how AshTypst releases it after a render, rendering in a separate OS
+process with `isolate? true`, and capacity planning, see the
+[Large documents](large-documents.md) guide.

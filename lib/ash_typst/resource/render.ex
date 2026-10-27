@@ -20,6 +20,7 @@ defmodule AshTypst.Resource.Render do
     data_file: "data.typ",
     encoding_context: %{},
     transaction?: false,
+    isolate?: false,
     arguments: [],
     read: [],
     pdf_options: [],
@@ -77,6 +78,12 @@ defmodule AshTypst.Resource.Render do
       type: :boolean,
       default: false,
       doc: "Wrap action execution in a transaction."
+    ],
+    isolate?: [
+      type: :boolean,
+      default: false,
+      doc:
+        "Compile and export in a separate OS process that exits after the render, so its memory is returned to the OS in full, and running out of memory fails the render instead of the VM. Records are still read and encoded in the calling process. Costs starting a peer node and scanning fonts for every render. See `AshTypst.Isolated`."
     ]
   ]
 

@@ -108,10 +108,17 @@ instead of `record` for `read :many`; only `args` when there is no `read`).
   relative string paths.
 - For large `:many` datasets, de-select unused columns — encoded output is
   Typst source the compiler parses on every compile.
-- `read :many` streams page by page, so its read action must support
-  pagination (compile error otherwise). Default `:read` actions do; give a
-  custom read action `pagination keyset?: true, required?: false`, or opt
-  out of streaming explicitly with `stream_with :none`.
+- `read :many` requires `stream_with` (no default): `:keyset`/`:offset`
+  stream page by page and need that pagination on the read action (default
+  `:read` actions have both; give a custom one
+  `pagination keyset?: true, required?: false`); `:none` reads every record
+  at once. A choice the action doesn't support is a compile error.
+- Typst needs ~100× the data file size in memory to lay out a document.
+  Streamed renders evict Typst's process-wide cache when done (the next
+  render starts cold). For renders whose peak may not fit in the VM, set
+  `isolate? true`: Typst runs in a throwaway OS process
+  (`AshTypst.Isolated`) and records stream from a task — not compatible
+  with private ETS tables or `transaction? true`.
 - Render names share the action namespace: a `render :report` and a
   `read :report` action on the same resource collide.
 

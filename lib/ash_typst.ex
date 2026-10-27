@@ -2,57 +2,79 @@ defmodule AshTypst do
   @moduledoc """
   Precompiled Rust NIFs for rendering [Typst](https://typst.app) documents from Elixir.
 
-  All rendering goes through a persistent `AshTypst.Context`, which loads fonts
-  once and keeps the compiled document in memory so you can render pages, export
-  PDFs, or re-compile after a markup change without repeating expensive setup.
+  All rendering goes through a persistent `AshTypst.Context`, which shares the
+  process-wide font cache and keeps the compiled document in memory so you can
+  render pages, export PDFs, or re-compile after a markup change without
+  repeating expensive setup.
 
   ## Architecture
 
   ```mermaid
   graph TB
-    subgraph Elixir
-      direction LR
-      C[AshTypst.Code] -->|encode| A[AshTypst.Context] -->|NIF calls| N[AshTypst.NIF]
+    subgraph "Peer VM -- exits after the render"
+      PN["Own context, NIF<br/>and caches"]
     end
 
+    subgraph "Your VM"
+      R["Render action<br/>AshTypst.Resource"]
+      I[AshTypst.Isolated]
+      P[AshTypst.ContextPool]
+      C[AshTypst.Code]
+      A[AshTypst.Context]
+      N[AshTypst.NIF]
+    end
+
+    subgraph "Shared by all contexts"
+      FC["Font cache<br/>refresh_fonts/0"]
+      MC["Memoization cache<br/>evict_cache/1"]
+    end
+
+    subgraph "TypstContext -- one per context"
+      W["SystemWorld<br/>markup, virtual files,<br/>sys.inputs, files from root"]
+      PD[PagedDocument]
+    end
+
+    subgraph "Outputs"
+      HTML["HTML<br/>export_html/2"]
+      BUN["Bundle<br/>export_bundle/2"]
+      SVG["SVG<br/>render_svg/2"]
+      PDF["PDF<br/>export_pdf/2"]
+    end
+
+    R -->|"isolate? true"| I
+    R -->|default| P
+    I -->|stdio| PN
+    P --> A
+    C -->|encode| A
+    A --> N
     N --> W
-    N --> VF
-    N --> IN
-    N --> F
-
-    subgraph "Rust -- TypstContext resource"
-      subgraph "SystemWorld (persistent)"
-        direction LR
-        W[Markup]
-        VF[Virtual Files]
-        IN[sys.inputs]
-        F[Fonts + FontBook]
-        FS["File Slots -- disk cache"]
-      end
-
-      W  -->|compile| PD
-      VF -->|import| PD
-      IN -->|sys.inputs| PD
-      F  -->|font resolve| PD
-      FS -->|import pkg| PD
-
-      subgraph "Compiled Output"
-        PD["PagedDocument (cached)"]
-      end
-
-      PD -->|render_svg| SVG[SVG string]
-      PD -->|export_pdf| PDF[PDF binary]
-      W  -->|export_html| HTML[HTML string]
-    end
+    FC -.->|fonts| W
+    MC -.->|reused| W
+    W -->|compile/1| PD
+    W --->|compiles itself| HTML
+    W ---> BUN
+    PD --> SVG
+    PD --> PDF
   ```
 
   **Key points:**
 
   - The `TypstContext` is a Rust NIF resource held as an opaque reference in Elixir.
-  - Fonts are scanned once at context creation and reused for every compile.
-  - `compile/1` stores a `PagedDocument`; `render_svg/2` and `export_pdf/2` read from it without recompiling.
-  - `export_html/1` performs its own compilation (HTML uses a different document type internally).
-  - Virtual files and `sys.inputs` persist across compiles until explicitly changed.
+  - Font scans are cached process-wide per font configuration and shared by every
+    context; `refresh_fonts/0` clears the cache.
+  - `compile/1` stores a `PagedDocument`; `render_svg/2` and `export_pdf/2` read
+    from it without recompiling. `export_html/2` and `export_bundle/2` compile on
+    their own (they use different document types internally).
+  - Virtual files and `sys.inputs` persist across compiles until explicitly
+    changed. `AshTypst.ContextPool` clears them, and the compiled document, when a
+    context is returned.
+  - Typst memoizes evaluation and layout in a cache shared by the whole VM. Each
+    compile drops entries unused for 10 compiles; `evict_cache/1` evicts more and
+    returns the memory to the OS, and render actions call it after every streamed
+    `read :many`.
+  - Render actions use `AshTypst.ContextPool`, or, with `isolate? true`,
+    `AshTypst.Isolated`, which runs the context in a peer VM that exits after the
+    render. See the [Large documents](large-documents.md) guide.
 
   ## Quick start
 
@@ -141,15 +163,40 @@ defmodule AshTypst do
   end
 
   @doc """
-  Evict Typst's process-wide memoization cache.
+  Evict Typst's memoization cache and return the freed memory to the OS.
 
-  Every compilation keeps the memoized results of the last ten compilations,
-  which speeds up re-rendering similar documents but holds large documents'
-  layouts in memory. Call this after rendering large or one-off documents to
-  release them: entries unused for more than `max_age` compilations are
-  evicted, and `0` (the default) evicts everything.
+  Typst memoizes evaluation and layout in a cache that is shared by every
+  context in the VM. Each compile already evicts entries that went unused
+  for 10 compiles; this evicts entries unused for `max_age` evictions,
+  where `0` (the default) evicts everything. On glibc systems the freed
+  memory is then trimmed with `malloc_trim`, without which it stays
+  resident.
+
+  Render actions call this after every streamed `read :many` render (see
+  `AshTypst.Resource.Render.Read`). Call it yourself after other large or
+  one-off renders, for example at the end of a background export job:
+  distinct large documents (each with its own id or timestamp) never hit
+  the cache again, yet stay resident until 10 more compiles age them out.
+  This releases memory between renders; it does not lower the peak of a
+  single render (see `AshTypst.Isolated` for that).
+
+  The cache is process-wide, so a full eviction also discards entries that
+  other renders could have reused: the next compile of any template starts
+  cold (template evaluation, text shaping plans, decoded images). Fonts,
+  template files and virtual files are not part of this cache and are kept.
+
+  Emits the `[:ash_typst, :cache, :evict]` telemetry event with the
+  `:duration` (native time units) as measurement and `:max_age` as
+  metadata.
   """
   def evict_cache(max_age \\ 0) when is_integer(max_age) and max_age >= 0 do
-    NIF.evict_cache(max_age)
+    start = System.monotonic_time()
+    :ok = NIF.evict_cache(max_age)
+
+    :telemetry.execute(
+      [:ash_typst, :cache, :evict],
+      %{duration: System.monotonic_time() - start},
+      %{max_age: max_age}
+    )
   end
 end

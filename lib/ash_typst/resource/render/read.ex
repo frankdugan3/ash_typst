@@ -20,36 +20,77 @@ defmodule AshTypst.Resource.Render.Read do
 
   `select`, `limit`, `batch_size` and `stream_with` are static.
 
-  ## Streaming `:many` reads
+  ## Choosing how a `:many` read fetches its records
 
-  A `:many` read is run with `Ash.stream!/2`: the records are fetched one page
-  of `batch_size` at a time, and each page is encoded and appended to the data
+  How the records are fetched decides how many of them are in memory at once,
+  so a `read :many` must say so with `stream_with`. There is no default, and
+  the choice is checked against the read action at compile time:
+
+  | `stream_with` | Fetches | The read action must |
+  | --- | --- | --- |
+  | `:keyset` | one page of `batch_size` at a time, with `Ash.stream!/2` | support keyset pagination |
+  | `:offset` | one page of `batch_size` at a time, with `Ash.stream!/2` | support offset pagination |
+  | `:none` | every record in one unpaginated read | not require pagination |
+
+      read :many do
+        sort inserted_at: :asc
+        stream_with :keyset
+        batch_size 500
+      end
+
+  With `:keyset` or `:offset`, each page is encoded and appended to the data
   file before the next one is fetched, so only one page of records is in
-  memory at a time.
-
-  Streaming pages through the read action, so the action must support
-  pagination; a `read :many` whose action has none is a compile error. The
-  default `:read` action created by `defaults [:read]` supports both kinds.
-  For a custom read action, add for example:
+  memory at a time. The default `:read` action created by `defaults [:read]`
+  supports both. For a custom read action, add for example:
 
       read :for_report do
         pagination keyset?: true, required?: false
       end
 
-  To read every record at once instead, opt out explicitly with
-  `stream_with :none`: one unpaginated read, encoded in one go, so all of the
-  records are in memory while the document is rendered. `batch_size` does not
-  apply and is rejected.
+  Prefer `:keyset`: offset pages can shift if records are inserted or deleted
+  while the document is rendered. Ash appends a stable sort (the primary key,
+  or the action's `stable_sort`) to every page, so either way each record is
+  returned exactly once in a consistent order.
 
-  Keyset pagination is used when the action supports it, offset pagination
-  otherwise; set `stream_with` to choose. Prefer keyset: offset pages can
-  shift if records are inserted or deleted while the document is rendered.
-  Ash appends a stable sort (the primary key, or the action's `stable_sort`)
-  to every page, so either way each record is returned exactly once in a
-  consistent order.
+  `:none` reads and encodes every record in one go, so all of them are in
+  memory while the document is rendered. Use it for small result sets, or
+  for an action without pagination. `batch_size` and `preflight?` do not
+  apply and are rejected.
 
   Whatever the pagination settings of the read action (`required?`,
   `default_limit`), all matching records are returned, subject to `limit`.
+
+  ## Memory after a streamed render
+
+  Typst needs far more memory than the size of its data file: in our
+  measurements, about 14 times the file for parsing (freed after the
+  compile), 7 times for the evaluated records, and close to 100 times for
+  the laid-out pages, most of which Typst keeps in a memoization cache that
+  is shared by every render in the VM.
+
+  A streamed render re-reads its records every time, so nothing it caches
+  can be reused. Once it is done, whether it succeeded, failed or raised,
+  the render therefore evicts the whole cache and returns the freed memory
+  to the operating system (`AshTypst.evict_cache/1`). The trade-off: the
+  next render of any template in the VM starts with a cold cache, so
+  template evaluation, text shaping plans and decoded images are computed
+  again. Fonts, template files and assets are not part of the cache and stay
+  loaded. Renders with `stream_with :none`, a `:one` read or no read keep
+  the cache as before.
+
+  Eviction lowers what stays resident after the render, not its peak. If a
+  render's peak can exceed the memory the VM can spare, set `isolate? true`
+  on the render: Typst then runs in a separate OS process (see
+  `AshTypst.Isolated`), and the records are streamed from a task, so the
+  memory used to fetch and encode them is freed when the task exits. The
+  read then runs in another process than the caller: data layers that scope
+  data to the calling process (a `private? true` ETS table) find nothing,
+  and it can't run inside the render's transaction, so `isolate? true`,
+  `transaction? true` and a streamed read are rejected together at compile
+  time.
+
+  The [Large documents](large-documents.md) guide covers these options,
+  their trade-offs and capacity planning in detail.
 
   ## Preflight
 
@@ -139,7 +180,7 @@ defmodule AshTypst.Resource.Render.Read do
     stream_with: [
       type: {:one_of, [:keyset, :offset, :none]},
       doc:
-        "How the records are fetched (`:many` only). `:keyset` and `:offset` stream them page by page with `Ash.stream!/2`, and the read action must support that pagination type. `:none` opts out of streaming: one unpaginated read, encoded in one go, so every record is in memory at once; the read action must not require pagination, and `batch_size` is not supported. Defaults to `:keyset` if the read action supports keyset pagination, and `:offset` otherwise; it never defaults to `:none`. All checked at compile time."
+        "How the records are fetched. Required for `:many`, not allowed for `:one`. `:keyset` and `:offset` stream them page by page with `Ash.stream!/2`, and the read action must support that pagination type. `:none` reads them in one unpaginated read, encoded in one go, so every record is in memory at once; the read action must not require pagination, and `batch_size` is not supported. There is no default, so the choice is always visible in the DSL. All checked at compile time."
     ],
     preflight?: [
       type: :boolean,

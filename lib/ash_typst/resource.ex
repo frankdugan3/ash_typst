@@ -84,7 +84,7 @@ defmodule AshTypst.Resource do
 
   - **No read**: only `args` (a dictionary of action arguments) is available.
   - **Read `:one`**: both `record` (the single resource) and `args` are available.
-  - **Read `:many`**: `records` (an array, streamed in batches) and `args` are available.
+  - **Read `:many`**: `records` (an array) and `args` are available.
 
   A `read :one` with `not_found nil` that finds nothing sets `record` to `none`.
 
@@ -92,9 +92,10 @@ defmodule AshTypst.Resource do
   render action are passed on to it (`authorize?` defaults to `true`). It uses
   the primary read action unless the `read` names another `action`, and its
   `filter`, `load`, `sort` and `arguments` accept the `arg/1`, `actor/1`,
-  `tenant/0` and `context/1` templates. A `read :many` is streamed with
-  `Ash.stream!/2`; see `AshTypst.Resource.Render.Read` for how the records are
-  fetched and what that means for memory use.
+  `tenant/0` and `context/1` templates. A `read :many` must choose with
+  `stream_with` whether its records are streamed page by page (`:keyset` or
+  `:offset`) or read at once (`:none`); see `AshTypst.Resource.Render.Read`
+  for what that means for memory use.
 
   Values are encoded with an empty context unless the render sets
   `encoding_context`, e.g. `encoding_context %{timezone: arg(:timezone)}`.

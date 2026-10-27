@@ -24,8 +24,14 @@ defmodule AshTypst.Context do
   Each function acquires internal locks, so a single context can be shared
   across processes. However, concurrent `compile` and `set_markup` calls on
   the same context will serialize — design your pipeline accordingly.
+
+  ## Isolated contexts
+
+  Every function here also accepts the context handed out by
+  `AshTypst.Isolated.with_context/2`, which lives in a separate OS process.
   """
 
+  alias AshTypst.Isolated
   alias AshTypst.NIF
 
   @doc """
@@ -68,7 +74,7 @@ defmodule AshTypst.Context do
   @doc "Set the main Typst markup. Invalidates any compiled document."
 
   def set_markup(ctx, markup) when is_binary(markup) do
-    NIF.context_set_markup(ctx, markup)
+    call(ctx, :context_set_markup, [markup])
   end
 
   @doc """
@@ -79,7 +85,7 @@ defmodule AshTypst.Context do
   """
 
   def compile(ctx) do
-    NIF.context_compile(ctx)
+    call(ctx, :context_compile, [])
   end
 
   @doc """
@@ -99,7 +105,7 @@ defmodule AshTypst.Context do
     page = Keyword.get(opts, :page, 0)
     pretty = Keyword.get(opts, :pretty, false)
     render_bleed = Keyword.get(opts, :render_bleed, false)
-    NIF.context_render_svg(ctx, page, pretty, render_bleed)
+    call(ctx, :context_render_svg, [page, pretty, render_bleed])
   end
 
   @doc """
@@ -115,7 +121,7 @@ defmodule AshTypst.Context do
   def export_pdf(ctx, opts \\ [])
 
   def export_pdf(ctx, %AshTypst.PDFOptions{} = opts) do
-    NIF.context_export_pdf(ctx, opts)
+    call(ctx, :context_export_pdf, [opts])
   end
 
   def export_pdf(ctx, opts) when is_list(opts) do
@@ -125,13 +131,13 @@ defmodule AshTypst.Context do
   @doc "List font families available in this context."
 
   def font_families(ctx) do
-    NIF.context_font_families(ctx)
+    call(ctx, :context_font_families, [])
   end
 
   @doc "Set (or overwrite) a virtual file with text content. Invalidates the compiled document."
 
   def set_virtual_file(ctx, path, content) when is_binary(path) and is_binary(content) do
-    NIF.context_set_virtual_file(ctx, path, content)
+    call(ctx, :context_set_virtual_file, [path, content])
   end
 
   @doc """
@@ -142,7 +148,7 @@ defmodule AshTypst.Context do
   """
 
   def set_virtual_file_binary(ctx, path, content) when is_binary(path) and is_binary(content) do
-    NIF.context_set_virtual_file_binary(ctx, path, content)
+    call(ctx, :context_set_virtual_file_binary, [path, content])
   end
 
   @doc """
@@ -153,19 +159,19 @@ defmodule AshTypst.Context do
   """
 
   def append_virtual_file(ctx, path, chunk) when is_binary(path) and is_binary(chunk) do
-    NIF.context_append_virtual_file(ctx, path, chunk)
+    call(ctx, :context_append_virtual_file, [path, chunk])
   end
 
   @doc "Remove a virtual file. Invalidates the compiled document."
 
   def clear_virtual_file(ctx, path) when is_binary(path) do
-    NIF.context_clear_virtual_file(ctx, path)
+    call(ctx, :context_clear_virtual_file, [path])
   end
 
   @doc "Remove all virtual files. Invalidates the compiled document."
 
   def clear_virtual_files(ctx) do
-    NIF.context_clear_virtual_files(ctx)
+    call(ctx, :context_clear_virtual_files, [])
   end
 
   @doc """
@@ -186,7 +192,7 @@ defmodule AshTypst.Context do
     context = opts[:context] || %{}
     batch_size = opts[:batch_size] || 100
 
-    NIF.context_set_virtual_file(ctx, path, "#let #{variable_name} = (\n")
+    call(ctx, :context_set_virtual_file, [path, "#let #{variable_name} = (\n"])
 
     stream
     |> Stream.chunk_every(batch_size)
@@ -196,22 +202,22 @@ defmodule AshTypst.Context do
           "  " <> AshTypst.Code.encode(item, context) <> ",\n"
         end)
 
-      NIF.context_append_virtual_file(ctx, path, chunk)
+      call(ctx, :context_append_virtual_file, [path, chunk])
     end)
 
-    NIF.context_append_virtual_file(ctx, path, ")\n")
+    call(ctx, :context_append_virtual_file, [path, ")\n"])
   end
 
   @doc "Set a single `sys.inputs` key/value pair."
 
   def set_input(ctx, key, value) when is_binary(key) and is_binary(value) do
-    NIF.context_set_input(ctx, key, value)
+    call(ctx, :context_set_input, [key, value])
   end
 
   @doc "Replace all `sys.inputs` with the given map of string keys/values."
 
   def set_inputs(ctx, inputs) when is_map(inputs) do
-    NIF.context_set_inputs(ctx, inputs)
+    call(ctx, :context_set_inputs, [inputs])
   end
 
   @doc """
@@ -227,7 +233,7 @@ defmodule AshTypst.Context do
 
   def export_html(ctx, opts \\ []) do
     pretty = Keyword.get(opts, :pretty, false)
-    NIF.context_export_html(ctx, pretty)
+    call(ctx, :context_export_html, [pretty])
   end
 
   @doc """
@@ -270,10 +276,15 @@ defmodule AshTypst.Context do
   def export_bundle(ctx, opts \\ [])
 
   def export_bundle(ctx, %AshTypst.BundleOptions{} = opts) do
-    NIF.context_export_bundle(ctx, opts)
+    call(ctx, :context_export_bundle, [opts])
   end
 
   def export_bundle(ctx, opts) when is_list(opts) do
     export_bundle(ctx, struct!(AshTypst.BundleOptions, opts))
   end
+
+  # A context created in a peer node by `AshTypst.Isolated` is driven
+  # through the peer; any other context is a local NIF resource.
+  defp call(%Isolated{} = isolated, fun, args), do: Isolated.call(isolated, fun, args)
+  defp call(ctx, fun, args), do: apply(NIF, fun, [ctx | args])
 end

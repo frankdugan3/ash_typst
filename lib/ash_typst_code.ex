@@ -88,6 +88,7 @@ defprotocol AshTypst.Code do
   read :many do
     select [:name, :amount, :inserted_at]
     load [:line_items]
+    stream_with :keyset
   end
   ```
 

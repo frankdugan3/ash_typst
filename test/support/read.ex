@@ -78,6 +78,11 @@ defmodule AshTypst.Test.Read.Item do
       end
     end
 
+    read :failing do
+      pagination keyset?: true, required?: false
+      prepare fn query, _context -> Ash.Query.add_error(query, "the read failed") end
+    end
+
     action :not_a_read, :string do
       run fn _input, _context -> {:ok, "nope"} end
     end
@@ -138,6 +143,7 @@ defmodule AshTypst.Test.Read.Item do
         filter expr(packing_slip_no == ^arg(:packing_slip_no) and location == ^arg(:location))
         select [:serial_no]
         sort serial_no: :asc
+        stream_with :keyset
       end
     end
 
@@ -151,6 +157,7 @@ defmodule AshTypst.Test.Read.Item do
       read :many do
         filter expr(packing_slip_no == ^arg(:packing_slip_no) or location == ^arg(:location))
         sort serial_no: :asc
+        stream_with :keyset
       end
     end
 
@@ -163,6 +170,7 @@ defmodule AshTypst.Test.Read.Item do
       read :many do
         filter expr(not (location == ^arg(:location)))
         sort serial_no: :asc
+        stream_with :keyset
       end
     end
 
@@ -175,6 +183,7 @@ defmodule AshTypst.Test.Read.Item do
       read :many do
         filter expr(status in ^arg(:statuses))
         sort serial_no: :asc
+        stream_with :keyset
       end
     end
 
@@ -188,6 +197,7 @@ defmodule AshTypst.Test.Read.Item do
       read :many do
         filter expr(serial_no in [^arg(:first), ^arg(:second)])
         sort serial_no: :asc
+        stream_with :keyset
       end
     end
 
@@ -203,6 +213,8 @@ defmodule AshTypst.Test.Read.Item do
                  string_downcase(serial_no) == string_downcase(^arg(:serial_no)) and
                    location == ^arg(:location)
                )
+
+        stream_with :keyset
       end
     end
 
@@ -215,6 +227,7 @@ defmodule AshTypst.Test.Read.Item do
       read :many do
         filter location: arg(:location)
         sort serial_no: :asc
+        stream_with :keyset
       end
     end
 
@@ -227,6 +240,7 @@ defmodule AshTypst.Test.Read.Item do
       read :many do
         filter expr(location == ^arg(:location))
         sort serial_no: :asc
+        stream_with :keyset
       end
     end
 
@@ -237,6 +251,7 @@ defmodule AshTypst.Test.Read.Item do
       read :many do
         filter expr(owner_id == ^actor(:id))
         sort serial_no: :asc
+        stream_with :keyset
       end
     end
 
@@ -247,6 +262,7 @@ defmodule AshTypst.Test.Read.Item do
       read :many do
         filter expr(location == ^tenant())
         sort serial_no: :asc
+        stream_with :keyset
       end
     end
 
@@ -257,6 +273,7 @@ defmodule AshTypst.Test.Read.Item do
       read :many do
         filter expr(location == ^context(:location))
         sort serial_no: :asc
+        stream_with :keyset
       end
     end
 
@@ -317,6 +334,7 @@ defmodule AshTypst.Test.Read.Item do
       read :many do
         load label: %{prefix: arg(:prefix)}
         sort serial_no: :asc
+        stream_with :keyset
       end
     end
 
@@ -328,6 +346,7 @@ defmodule AshTypst.Test.Read.Item do
 
       read :many do
         sort label: {%{prefix: arg(:prefix)}, :desc}
+        stream_with :keyset
       end
     end
 
@@ -338,6 +357,7 @@ defmodule AshTypst.Test.Read.Item do
       read :many do
         sort serial_no: :asc
         batch_size 2
+        stream_with :keyset
       end
     end
 
@@ -349,6 +369,7 @@ defmodule AshTypst.Test.Read.Item do
         action :keyset
         sort serial_no: :asc
         batch_size 2
+        stream_with :keyset
       end
     end
 
@@ -361,6 +382,7 @@ defmodule AshTypst.Test.Read.Item do
         sort serial_no: :asc
         batch_size 2
         preflight? false
+        stream_with :keyset
       end
     end
 
@@ -371,6 +393,7 @@ defmodule AshTypst.Test.Read.Item do
       read :many do
         sort serial_no: :asc
         batch_size 2
+        stream_with :keyset
       end
     end
 
@@ -382,6 +405,7 @@ defmodule AshTypst.Test.Read.Item do
         sort serial_no: :asc
         batch_size 2
         preflight? false
+        stream_with :keyset
       end
     end
 
@@ -392,6 +416,7 @@ defmodule AshTypst.Test.Read.Item do
       read :many do
         sort serial_no: :asc
         batch_size 2
+        stream_with :keyset
       end
     end
 
@@ -402,6 +427,7 @@ defmodule AshTypst.Test.Read.Item do
       read :many do
         action :keyset_no_default
         sort serial_no: :asc
+        stream_with :keyset
       end
     end
 
@@ -412,6 +438,7 @@ defmodule AshTypst.Test.Read.Item do
       read :many do
         action :offset
         sort serial_no: :asc
+        stream_with :offset
       end
     end
 
@@ -423,6 +450,7 @@ defmodule AshTypst.Test.Read.Item do
         action :keyset
         sort serial_no: :asc
         limit 3
+        stream_with :keyset
       end
     end
 
@@ -482,6 +510,7 @@ defmodule AshTypst.Test.Read.Item do
         action :at_location
         arguments location: arg(:where)
         sort serial_no: :asc
+        stream_with :keyset
       end
     end
 
@@ -498,6 +527,7 @@ defmodule AshTypst.Test.Read.Item do
       read :many do
         action :from_context
         sort serial_no: :asc
+        stream_with :keyset
       end
     end
 
@@ -522,6 +552,204 @@ defmodule AshTypst.Test.Read.Item do
 
       read :many do
         sort serial_no: :asc
+        stream_with :keyset
+      end
+    end
+
+    render :failing_stream do
+      template :records
+      format :html
+
+      read :many do
+        action :failing
+        preflight? false
+        stream_with :keyset
+      end
+    end
+
+    # Encoding a datetime into an unknown zone raises an `ArgumentError`,
+    # which is not an Ash error, so it is raised out of the render.
+    render :raising_stream do
+      template :shipped_many
+      format :html
+      encoding_context %{timezone: "Not/AZone"}
+
+      read :many do
+        sort serial_no: :asc
+        preflight? false
+        stream_with :keyset
+      end
+    end
+
+    render :export_failing do
+      template :records
+      format :svg
+      page 99
+
+      read :many do
+        sort serial_no: :asc
+        stream_with :keyset
+      end
+    end
+
+    template :plain do
+      markup ~TYPST"""
+      [plain]
+      """
+    end
+
+    render :no_read do
+      template :plain
+      format :html
+    end
+
+    render :one_html do
+      template :record
+      format :html
+
+      read :one do
+        filter expr(serial_no == "A-1")
+      end
+    end
+  end
+end
+
+defmodule AshTypst.Test.Read.Shared do
+  @moduledoc """
+  A resource for isolated renders. An isolated render streams its records
+  from a task, which cannot see the process-private ETS table of
+  `AshTypst.Test.Read.Item`, so this one uses a shared table. Tests using it
+  must not run async.
+  """
+  use Ash.Resource,
+    domain: AshTypst.Test.Read.Domain,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [AshTypst.Resource]
+
+  @derive AshTypst.Code
+
+  attributes do
+    uuid_primary_key :id
+    attribute :serial_no, :string, public?: true, allow_nil?: false
+    attribute :shipped_at, :utc_datetime, public?: true
+  end
+
+  actions do
+    defaults [:read, create: [:serial_no, :shipped_at]]
+
+    read :unpaginated
+
+    read :failing do
+      pagination keyset?: true, required?: false
+      prepare fn query, _context -> Ash.Query.add_error(query, "the read failed") end
+    end
+  end
+
+  typst do
+    template :records do
+      markup ~TYPST"""
+      #import "data.typ": records
+      [#records.map(r => r.serial_no).join(",")]
+      """
+    end
+
+    template :shipped_many do
+      markup ~TYPST"""
+      #import "data.typ": records
+      [#records.first().shipped_at.hour()]
+      """
+    end
+
+    template :broken do
+      markup ~TYPST"""
+      #import "data.typ": records, args
+      [#args.missing #records.len()]
+      """
+    end
+
+    render :all_isolated do
+      template :records
+      format :html
+      isolate? true
+
+      read :many do
+        sort serial_no: :asc
+        batch_size 2
+        stream_with :keyset
+      end
+    end
+
+    render :all_isolated_pdf do
+      template :records
+      format :pdf
+      isolate? true
+
+      read :many do
+        sort serial_no: :asc
+        batch_size 2
+        stream_with :keyset
+      end
+    end
+
+    render :unstreamed_isolated do
+      template :records
+      format :html
+      isolate? true
+
+      read :many do
+        action :unpaginated
+        sort serial_no: :asc
+        stream_with :none
+      end
+    end
+
+    render :broken_isolated do
+      template :broken
+      format :html
+      isolate? true
+
+      read :many do
+        sort serial_no: :asc
+        batch_size 2
+        stream_with :keyset
+      end
+    end
+
+    render :broken_isolated_without_preflight do
+      template :broken
+      format :html
+      isolate? true
+
+      read :many do
+        sort serial_no: :asc
+        batch_size 2
+        preflight? false
+        stream_with :keyset
+      end
+    end
+
+    render :failing_stream_isolated do
+      template :records
+      format :html
+      isolate? true
+
+      read :many do
+        action :failing
+        preflight? false
+        stream_with :keyset
+      end
+    end
+
+    render :raising_stream_isolated do
+      template :shipped_many
+      format :html
+      encoding_context %{timezone: "Not/AZone"}
+      isolate? true
+
+      read :many do
+        sort serial_no: :asc
+        preflight? false
+        stream_with :keyset
       end
     end
   end
@@ -594,6 +822,7 @@ defmodule AshTypst.Test.Read.Secured do
 
       read :many do
         sort serial_no: :asc
+        stream_with :keyset
       end
     end
 

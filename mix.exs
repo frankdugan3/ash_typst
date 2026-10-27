@@ -30,6 +30,7 @@ defmodule AshTypst.MixProject do
          search_data: Spark.Docs.search_data_for(AshTypst.Resource)},
         "documentation/topics/get-started.md",
         "documentation/topics/templating.md",
+        "documentation/topics/large-documents.md",
         "documentation/topics/multi-language.md",
         "documentation/topics/security/sensitive-data.md"
       ],
@@ -45,7 +46,10 @@ defmodule AshTypst.MixProject do
           AshTypst,
           AshTypst.Code,
           AshTypst.Context,
+          AshTypst.Context.Options,
           AshTypst.ContextPool,
+          AshTypst.Isolated,
+          AshTypst.Isolated.Error,
           AshTypst.Sigil,
           AshTypst.PathResolver,
           AshTypst.Document,
@@ -134,6 +138,7 @@ defmodule AshTypst.MixProject do
       {:sourceror, "~> 1.7", optional: true},
       {:ash, "~> 3.5 and >= 3.5.15"},
       {:decimal, "~> 3.0"},
+      {:telemetry, "~> 1.0"},
       {:rustler_precompiled, "~> 0.8"}
     ]
   end

@@ -30,8 +30,30 @@ defmodule AshTypst.Resource.Transformers.ValidateRead do
       end
 
       validate_action(render, render.read, dsl_state, module)
+      validate_isolated_transaction(render, render.read, module)
     end
   end
+
+  # An isolated render streams its records from a task, and a transaction
+  # belongs to the process that opened it, so the read would run outside it.
+  defp validate_isolated_transaction(
+         %{isolate?: true, transaction?: true} = render,
+         %{cardinality: :many, stream_with: stream_with},
+         module
+       )
+       when stream_with != :none do
+    raise DslError,
+      module: module,
+      message:
+        "Render #{inspect(render.name)}: `isolate? true` streams the records of its " <>
+          "`read :many` from a separate process, which would read them outside the " <>
+          "transaction of `transaction? true`. Remove one of the two, or set " <>
+          "`stream_with :none` on the `read`.",
+      path: [:typst, render.name, :isolate?],
+      location: Entity.property_anno(render, :isolate?) || Entity.anno(render)
+  end
+
+  defp validate_isolated_transaction(_render, _read, _module), do: :ok
 
   defp validate_arg_refs(render, entity, option, module) do
     declared = Enum.map(render.arguments, &to_string(&1.name))
@@ -138,22 +160,22 @@ defmodule AshTypst.Resource.Transformers.ValidateRead do
     end
   end
 
-  # `read :many` is streamed page by page, which needs pagination on the action,
-  # unless streaming is turned off explicitly with `stream_with :none`.
+  # How a `read :many` fetches its records decides how much of them is in
+  # memory at once, so it is never chosen implicitly: `stream_with` is
+  # required, and must be one the read action supports.
   defp validate_pagination(_render, %{cardinality: :one}, _action, _module), do: :ok
 
   defp validate_pagination(render, %{stream_with: nil} = read, action, module) do
-    if not supports?(action, :keyset) and not supports?(action, :offset) do
-      raise DslError,
-        module: module,
-        message:
-          "Render #{inspect(render.name)}: `read :many` streams its records page by page, " <>
-            "but read action #{inspect(action.name)} has no pagination. Add " <>
-            "`pagination keyset?: true, required?: false` to the action, or set " <>
-            "`stream_with :none` on the `read` to read every record at once.",
-        path: [:typst, render.name, :read, :action],
-        location: Entity.property_anno(read, :action) || Entity.anno(read)
-    end
+    raise DslError,
+      module: module,
+      message:
+        "Render #{inspect(render.name)}: `read :many` requires `stream_with`. " <>
+          "Read action #{inspect(action.name)} supports " <>
+          "#{action |> available_strategies() |> Enum.map_join(", ", &"`stream_with #{inspect(&1)}`")}. " <>
+          "`:keyset` and `:offset` stream the records page by page; `:none` reads every " <>
+          "record at once.",
+      path: [:typst, render.name, :read],
+      location: Entity.anno(read)
   end
 
   defp validate_pagination(render, %{stream_with: :none} = read, action, module) do
@@ -186,6 +208,11 @@ defmodule AshTypst.Resource.Transformers.ValidateRead do
         path: [:typst, render.name, :read, :stream_with],
         location: Entity.property_anno(read, :stream_with) || Entity.anno(read)
     end
+  end
+
+  defp available_strategies(action) do
+    Enum.filter([:keyset, :offset], &supports?(action, &1)) ++
+      if match?(%{pagination: %{required?: true}}, action), do: [], else: [:none]
   end
 
   defp supports?(%{pagination: %{keyset?: true}}, :keyset), do: true

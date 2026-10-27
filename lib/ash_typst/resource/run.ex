@@ -4,6 +4,7 @@ defmodule AshTypst.Resource.Run do
 
   alias Ash.Error.Query.NotFound
   alias AshTypst.ContextPool
+  alias AshTypst.Isolated
   alias AshTypst.Resource.Errors
   alias AshTypst.Resource.Info
 
@@ -25,20 +26,71 @@ defmodule AshTypst.Resource.Run do
       |> Map.reject(fn {_key, value} -> is_nil(value) end)
 
     with {:ok, data} <- fetch_data(resource, input, opts[:read], context, template_opts) do
-      ContextPool.with_context(context_options(resource), fn ctx ->
+      with_context(context_options(resource), data, opts[:isolate?], fn ctx ->
         render(ctx, template, resource, data, input, opts, encoding_context)
       end)
     end
+  end
+
+  # An isolated render runs in a peer node that exits afterwards, which
+  # returns all of its memory to the OS.
+  defp with_context(context_options, _data, true, fun) do
+    Isolated.with_context(context_options, fun)
+  rescue
+    error in Isolated.Error -> {:error, error}
+  end
+
+  # A streamed render re-fetches its records every time, so nothing it
+  # memoizes can be reused, and it is by far the largest render. Evict the
+  # whole cache once the context is checked in (which drops the compiled
+  # document), whether the render succeeded, failed or raised.
+  defp with_context(context_options, {:many, _query, _stream_opts}, _isolate?, fun) do
+    ContextPool.with_context(context_options, fun)
+  after
+    AshTypst.evict_cache()
+  end
+
+  defp with_context(context_options, _data, _isolate?, fun) do
+    ContextPool.with_context(context_options, fun)
   end
 
   defp render(ctx, template, resource, data, input, opts, encoding_context) do
     with :ok <- set_template(ctx, template, resource),
          :ok <- set_inputs(ctx, template),
          :ok <- preflight(ctx, data, input.arguments, opts, encoding_context),
-         :ok <- inject_data(ctx, data, input.arguments, opts, encoding_context),
+         :ok <- inject(ctx, data, input.arguments, opts, encoding_context),
          {:ok, compile_result} <- maybe_compile(ctx, opts[:format]) do
       export(ctx, opts[:format], opts, compile_result)
     end
+  end
+
+  # An isolated render streams its records from a task, so the heap that
+  # fetching and encoding them grows is freed when the task exits instead of
+  # staying with the caller, which may be long-lived. The task runs as the
+  # caller (Ash reads the actor and tenant from the query and options) and
+  # whatever it raises is raised again here.
+  defp inject(ctx, {:many, _query, _stream_opts} = data, arguments, opts, encoding_context) do
+    if opts[:isolate?] do
+      fn ->
+        try do
+          {:ok, inject_data(ctx, data, arguments, opts, encoding_context)}
+        catch
+          kind, reason -> {:raise, kind, reason, __STACKTRACE__}
+        end
+      end
+      |> Task.async()
+      |> Task.await(:infinity)
+      |> case do
+        {:ok, result} -> result
+        {:raise, kind, reason, stacktrace} -> :erlang.raise(kind, reason, stacktrace)
+      end
+    else
+      inject_data(ctx, data, arguments, opts, encoding_context)
+    end
+  end
+
+  defp inject(ctx, data, arguments, opts, encoding_context) do
+    inject_data(ctx, data, arguments, opts, encoding_context)
   end
 
   # The bundle target uses `document`/`asset` elements that are invalid in the
@@ -75,7 +127,7 @@ defmodule AshTypst.Resource.Run do
         stream_opts =
           Keyword.merge(read_opts,
             batch_size: read.batch_size,
-            stream_with: read.stream_with || stream_strategy(query.action)
+            stream_with: read.stream_with
           )
 
         {:ok, {:many, query, stream_opts}}
@@ -156,10 +208,6 @@ defmodule AshTypst.Resource.Run do
       {:error, error} -> {:error, error}
     end
   end
-
-  # `ValidateRead` ensures the action paginates by keyset or offset.
-  defp stream_strategy(%{pagination: %{keyset?: true}}), do: :keyset
-  defp stream_strategy(_action), do: :offset
 
   defp handle_not_found({:ok, nil}, %{not_found: nil}), do: {:ok, nil}
   defp handle_not_found({:ok, nil}, _read), do: {:error, NotFound.exception([])}

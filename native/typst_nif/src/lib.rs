@@ -64,6 +64,27 @@ fn evict_memoization_cache() {
     comemo::evict(10);
 }
 
+/// Return memory freed by an eviction to the operating system.
+///
+/// glibc keeps freed memory in its arenas, and every compile runs on a fresh
+/// thread that can get an arena of its own. Without trimming, the memory of
+/// an evicted render stays resident: measured on a 14 MB data file, RSS went
+/// from 1.5 GB to 1.47 GB after eviction, against 1.9 GB to 0.77 GB with
+/// jemalloc. `malloc_trim` also releases free pages in the middle of the
+/// heaps, not only at their top.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+fn release_freed_memory() {
+    // SAFETY: `malloc_trim` only inspects and shrinks the allocator's own
+    // free lists; it is safe to call at any time from any thread.
+    unsafe {
+        libc::malloc_trim(0);
+    }
+}
+
+/// Other allocators (musl, macOS, Windows) return freed memory on their own.
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+fn release_freed_memory() {}
+
 rustler::atoms! {
     ok,
     pdf_1_7,
@@ -964,18 +985,20 @@ fn context_export_bundle<'a>(
     })
 }
 
-#[rustler::nif]
-fn clear_font_cache() -> Atom {
-    FONT_CACHE.lock().clear();
-    ok()
-}
-
-/// Evict memoization entries unused for more than `max_age` compilations (`0`
-/// evicts everything). Every compilation already evicts with a max age of 10,
-/// which keeps up to ten recent documents' results alive in a long-running VM.
+/// Evict entries of Typst's memoization cache that went unused for `max_age`
+/// evictions (`0` evicts everything), then return the freed memory to the
+/// operating system. Both steps walk large structures after a big render, so
+/// this runs on a dirty scheduler.
 #[rustler::nif(schedule = "DirtyCpu")]
 fn evict_cache(max_age: usize) -> Atom {
     comemo::evict(max_age);
+    release_freed_memory();
+    ok()
+}
+
+#[rustler::nif]
+fn clear_font_cache() -> Atom {
+    FONT_CACHE.lock().clear();
     ok()
 }
 

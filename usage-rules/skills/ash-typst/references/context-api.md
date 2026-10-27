@@ -108,6 +108,39 @@ end)
 - At most `System.schedulers_online()` idle contexts are retained per
   configuration.
 
+## Memory and AshTypst.Isolated
+
+Typst memoizes evaluation and layout in a cache shared by every context in
+the VM; each compile evicts entries unused for 10 compiles. After rendering
+a large document directly, call `AshTypst.evict_cache/0` to evict everything
+and return the memory to the OS (`evict_cache/1` takes a max age). It emits
+`[:ash_typst, :cache, :evict]`.
+
+To keep a render's peak out of the VM entirely, use
+`AshTypst.Isolated.with_context/2`. It takes the same options as
+`AshTypst.Context.new/1` and hands out a context that works with every
+`AshTypst.Context` function, but lives in a peer OS process that exits when
+the function returns:
+
+```elixir
+AshTypst.Isolated.with_context([root: template_dir], fn ctx ->
+  :ok = AshTypst.Context.set_markup(ctx, markup)
+  :ok = AshTypst.Context.stream_virtual_file(ctx, "data.typ", records, variable_name: "records")
+
+  with {:ok, _} <- AshTypst.Context.compile(ctx) do
+    AshTypst.Context.export_pdf(ctx)
+  end
+end)
+```
+
+- A peer killed mid-render (e.g. out of memory) raises
+  `AshTypst.Isolated.Error`; the calling VM is unaffected. The peer also
+  stops if the caller dies.
+- Costs a peer start and a font scan per call; nothing is cached between
+  calls. Use it for large renders, not per-request previews.
+- Binaries over 64 KB (data chunks, the exported document) pass through a
+  private `0700` directory under `System.tmp_dir!/0`, removed afterwards.
+
 ## Fonts
 
 - `AshTypst.font_families/0,1` — list fonts available to Typst (no context

@@ -173,7 +173,9 @@ Values that *were* queried but are empty come through as `none`, so
    compute (Ash aggregates) are cheaper there than in template code iterating
    a huge array.
 4. **Evict the memoization cache after large one-off renders.** Typst's
-   process-wide cache keeps the last ten compilations' results, so large
-   distinct documents stay resident and add up. Call `AshTypst.evict_cache/0`
-   after them (e.g. at the end of an export job); it frees memory between
-   renders, not a single render's peak.
+   process-wide cache keeps entries until ten more compilations pass
+   without using them, so large distinct documents stay resident and add
+   up. Streamed `read :many` render actions evict automatically; otherwise
+   call `AshTypst.evict_cache/0` (e.g. at the end of an export job). It
+   frees memory between renders, not a single render's peak — for that use
+   `isolate? true` / `AshTypst.Isolated.with_context/2`.

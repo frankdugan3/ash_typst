@@ -582,6 +582,7 @@ defmodule AshTypst.ResourceTest do
 
               read :many do
                 filter expr(name == ^arg(:location) and kind == ^arg(:locaton))
+                stream_with :keyset
               end
             end
           end
@@ -686,6 +687,7 @@ defmodule AshTypst.ResourceTest do
 
               read :many do
                 sort label: {%{prefix: arg(:prefix)}, :desc}
+                stream_with :keyset
               end
             end
           end
@@ -739,6 +741,7 @@ defmodule AshTypst.ResourceTest do
               read :many do
                 action :at_location
                 arguments %{location: arg(:where)}
+                stream_with :keyset
               end
             end
           end
@@ -841,6 +844,7 @@ defmodule AshTypst.ResourceTest do
 
               read :many do
                 action :nonexistent
+                stream_with :keyset
               end
             end
           end
@@ -893,6 +897,7 @@ defmodule AshTypst.ResourceTest do
 
               read :many do
                 action :not_a_read
+                stream_with :keyset
               end
             end
           end
@@ -946,6 +951,7 @@ defmodule AshTypst.ResourceTest do
               read :many do
                 action :at_location
                 arguments %{place: arg(:location)}
+                stream_with :keyset
               end
             end
           end
@@ -998,6 +1004,7 @@ defmodule AshTypst.ResourceTest do
 
               read :many do
                 not_found nil
+                stream_with :keyset
               end
             end
           end
@@ -1246,14 +1253,44 @@ defmodule AshTypst.ResourceTest do
       end
     end
 
-    test "ValidateRead catches a `:many` read whose action has no pagination" do
+    test "ValidateRead requires `stream_with` on a `:many` read and lists what the action supports" do
+      assert_dsl_error ~r/`read :many` requires `stream_with`. Read action :read supports `stream_with :keyset`, `stream_with :offset`, `stream_with :none`./ do
+        defmodule StreamWithMissing do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          @derive AshTypst.Code
+
+          actions do
+            defaults [:read]
+          end
+
+          typst do
+            template :doc do
+              markup "= Test"
+            end
+
+            render :render_doc do
+              template :doc
+              format :pdf
+
+              read :many do
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "ValidateRead requires `stream_with` and offers only `:none` for an unpaginated action" do
       expected = """
       [AshTypst.ResourceTest.UnpaginatedMany]
-      typst -> render_doc -> read -> action defined in <FILE:LINE>:
-        Render :render_doc: `read :many` streams its records page by page, but read action :unpaginated has no pagination. Add `pagination keyset?: true, required?: false` to the action, or set `stream_with :none` on the `read` to read every record at once.
+      typst -> render_doc -> read defined in <FILE:LINE>:
+        Render :render_doc: `read :many` requires `stream_with`. Read action :unpaginated supports `stream_with :none`. `:keyset` and `:offset` stream the records page by page; `:none` reads every record at once.
       │
-      <LINE> │                 action :unpaginated
-      │                 ~~~~~~~~~~~~~~~~~~~
+      <LINE> │               read :many do
+      │               ~~~~~~~~~~~~~
       │
       └─ <FILE:LINE>: (file)\
       """
