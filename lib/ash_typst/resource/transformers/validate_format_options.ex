@@ -65,6 +65,17 @@ defmodule AshTypst.Resource.Transformers.ValidateFormatOptions do
       "`read :one` does not support `stream_with`.",
       module
     )
+
+    # `preflight?` defaults to `true`, so only an explicit `false` can be
+    # told apart from the option not being set.
+    reject(
+      read.preflight? == false,
+      render,
+      read,
+      :preflight?,
+      "`read :one` does not support `preflight?`.",
+      module
+    )
   end
 
   # `not_found` defaults to `:error`, so only an explicit `nil` can be told
@@ -86,6 +97,16 @@ defmodule AshTypst.Resource.Transformers.ValidateFormatOptions do
       read,
       :batch_size,
       "`stream_with :none` does not support `batch_size`.",
+      module
+    )
+
+    # Without streaming, the template is compiled once, with all of the data.
+    reject(
+      read.stream_with == :none && read.preflight? == false,
+      render,
+      read,
+      :preflight?,
+      "`stream_with :none` does not support `preflight?`.",
       module
     )
   end

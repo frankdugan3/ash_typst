@@ -51,6 +51,27 @@ defmodule AshTypst.Resource.Render.Read do
   Whatever the pagination settings of the read action (`required?`,
   `default_limit`), all matching records are returned, subject to `limit`.
 
+  ## Preflight
+
+  Typst can only compile the template once the data file is complete, so a
+  mistake in the template (for example a misspelled field, or an argument the
+  caller did not give) would otherwise surface only after every record has
+  been fetched and encoded. For a large document, that is minutes of work
+  thrown away.
+
+  A streamed `:many` read therefore first compiles the template against the
+  first page of records (`batch_size` of them, read with the same query), and
+  only streams the full data when that compile succeeds. A template error is
+  returned before the stream starts. The cost is one extra page read and one
+  compile of that page.
+
+  The first page is used rather than an empty list, so a template that needs
+  at least one record (`records.first()`) still passes. A template that only
+  fails on a record further in can still fail after the stream.
+
+  Set `preflight? false` to skip it, for example when the first page is
+  expensive to read twice.
+
   For the full DSL reference, see `d:AshTypst.Resource.typst.render.read`.
   """
   defstruct [
@@ -65,6 +86,7 @@ defmodule AshTypst.Resource.Render.Read do
     arguments: %{},
     load: [],
     batch_size: 100,
+    preflight?: true,
     __spark_metadata__: nil
   ]
 
@@ -118,6 +140,12 @@ defmodule AshTypst.Resource.Render.Read do
       type: {:one_of, [:keyset, :offset, :none]},
       doc:
         "How the records are fetched (`:many` only). `:keyset` and `:offset` stream them page by page with `Ash.stream!/2`, and the read action must support that pagination type. `:none` opts out of streaming: one unpaginated read, encoded in one go, so every record is in memory at once; the read action must not require pagination, and `batch_size` is not supported. Defaults to `:keyset` if the read action supports keyset pagination, and `:offset` otherwise; it never defaults to `:none`. All checked at compile time."
+    ],
+    preflight?: [
+      type: :boolean,
+      default: true,
+      doc:
+        "Compile the template against the first page of records before streaming the rest, so a template error is returned before the full data is fetched (`:many` only, not with `stream_with :none`). Costs one extra page read and one compile of that page."
     ],
     not_found: [
       type: {:one_of, [:error, nil]},

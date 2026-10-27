@@ -30,6 +30,7 @@ spark_locals_without_parens = [
   pdf_options: 0,
   pdf_options: 1,
   pdf_standards: 1,
+  preflight?: 1,
   prepare: 1,
   prepare: 2,
   pretty: 1,

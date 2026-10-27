@@ -150,19 +150,20 @@ defmodule AshTypst.ResourceReadTest do
     end
   end
 
+  # A streamed read makes one extra read: the first page, for the preflight.
   describe "streaming a `:many` read" do
     test "a default read action supports keyset pagination, so it is read in batches" do
-      assert {result, 3} = count_reads(fn -> render(:all, %{}) end)
+      assert {result, 4} = count_reads(fn -> render(:all, %{}) end)
       assert serial_nos(result) == ["A-1", "A-2", "A-3", "A-4", "A-5"]
     end
 
     test "an action with keyset pagination is read in batches of `batch_size`" do
-      assert {result, 3} = count_reads(fn -> render(:all_keyset, %{}) end)
+      assert {result, 4} = count_reads(fn -> render(:all_keyset, %{}) end)
       assert serial_nos(result) == ["A-1", "A-2", "A-3", "A-4", "A-5"]
     end
 
     test "`stream_with` chooses the strategy" do
-      assert {result, 3} = count_reads(fn -> render(:forced_offset, %{}) end)
+      assert {result, 4} = count_reads(fn -> render(:forced_offset, %{}) end)
       assert serial_nos(result) == ["A-1", "A-2", "A-3", "A-4", "A-5"]
     end
 
@@ -179,6 +180,35 @@ defmodule AshTypst.ResourceReadTest do
     test "`stream_with :none` reads a paginated action once, without a page" do
       assert {result, 1} = count_reads(fn -> render(:unstreamed_paginated, %{}) end)
       assert serial_nos(result) == ["A-1", "A-2", "A-3", "A-4", "A-5"]
+    end
+  end
+
+  describe "preflight" do
+    test "a template error is returned before the records are streamed" do
+      assert {{:error, %Ash.Error.Invalid{errors: [%AshTypst.Resource.Errors.CompileError{}]}}, 1} =
+               count_reads(fn -> render(:broken, %{}) end)
+    end
+
+    test "without it, the error is returned after every record was read" do
+      assert {{:error, %Ash.Error.Invalid{errors: [%AshTypst.Resource.Errors.CompileError{}]}}, 3} =
+               count_reads(fn -> render(:broken_without_preflight, %{}) end)
+    end
+
+    test "without it, a streamed read makes no extra read" do
+      assert {result, 3} = count_reads(fn -> render(:all_keyset_without_preflight, %{}) end)
+      assert serial_nos(result) == ["A-1", "A-2", "A-3", "A-4", "A-5"]
+    end
+
+    test "a template that needs a record compiles, because the first page has records" do
+      assert printed(render(:shipped_many, %{})) == "21"
+    end
+
+    test "a template that compiles with the first page renders the full data" do
+      assert serial_nos(render(:all, %{})) == ["A-1", "A-2", "A-3", "A-4", "A-5"]
+    end
+
+    test "is skipped for a bundle, which only compiles when it is exported" do
+      assert {{:error, _error}, 3} = count_reads(fn -> render(:broken_bundle, %{}) end)
     end
   end
 

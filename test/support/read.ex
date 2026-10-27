@@ -119,6 +119,14 @@ defmodule AshTypst.Test.Read.Item do
       """
     end
 
+    # Reads an argument that the render does not give, so it never compiles.
+    template :broken do
+      markup ~TYPST"""
+      #import "data.typ": records, args
+      [#args.missing #records.len()]
+      """
+    end
+
     render :by_and do
       template :records
       format :html
@@ -339,6 +347,49 @@ defmodule AshTypst.Test.Read.Item do
 
       read :many do
         action :keyset
+        sort serial_no: :asc
+        batch_size 2
+      end
+    end
+
+    render :all_keyset_without_preflight do
+      template :records
+      format :html
+
+      read :many do
+        action :keyset
+        sort serial_no: :asc
+        batch_size 2
+        preflight? false
+      end
+    end
+
+    render :broken do
+      template :broken
+      format :html
+
+      read :many do
+        sort serial_no: :asc
+        batch_size 2
+      end
+    end
+
+    render :broken_without_preflight do
+      template :broken
+      format :html
+
+      read :many do
+        sort serial_no: :asc
+        batch_size 2
+        preflight? false
+      end
+    end
+
+    render :broken_bundle do
+      template :broken
+      format :bundle
+
+      read :many do
         sort serial_no: :asc
         batch_size 2
       end

@@ -34,6 +34,7 @@ defmodule AshTypst.Resource.Run do
   defp render(ctx, template, resource, data, input, opts, encoding_context) do
     with :ok <- set_template(ctx, template, resource),
          :ok <- set_inputs(ctx, template),
+         :ok <- preflight(ctx, data, input.arguments, opts, encoding_context),
          :ok <- inject_data(ctx, data, input.arguments, opts, encoding_context),
          {:ok, compile_result} <- maybe_compile(ctx, opts[:format]) do
       export(ctx, opts[:format], opts, compile_result)
@@ -119,6 +120,42 @@ defmodule AshTypst.Resource.Run do
 
   defp maybe_limit(query, nil), do: query
   defp maybe_limit(query, limit), do: Ash.Query.limit(query, limit)
+
+  # A template error only shows when the full data file is compiled, which
+  # for a streamed read is after every record was fetched and encoded. So the
+  # template is compiled against the first page first. `inject_data/5` then
+  # overwrites the data file with the full stream. A bundle compiles only in
+  # `export_bundle/2`, so it has no separate compile to run here.
+  defp preflight(ctx, {:many, query, stream_opts}, arguments, opts, encoding_context) do
+    if opts[:read][:preflight?] and opts[:format] != :bundle do
+      with {:ok, records} <- first_page(query, stream_opts),
+           :ok <- inject_data(ctx, {:all, records}, arguments, opts, encoding_context),
+           {:ok, _compile_result} <- compile(ctx) do
+        :ok
+      end
+    else
+      :ok
+    end
+  end
+
+  defp preflight(_ctx, _data, _arguments, _opts, _encoding_context), do: :ok
+
+  # The same query as the stream, limited to one page. A page is requested
+  # explicitly, because the action can require pagination.
+  defp first_page(query, stream_opts) do
+    limit = Enum.min(Enum.reject([stream_opts[:batch_size], query.limit], &is_nil/1))
+
+    read_opts =
+      stream_opts
+      |> Keyword.drop([:batch_size, :stream_with])
+      |> Keyword.put(:page, limit: limit)
+
+    case Ash.read(query, read_opts) do
+      {:ok, %{results: records}} -> {:ok, records}
+      {:ok, records} when is_list(records) -> {:ok, records}
+      {:error, error} -> {:error, error}
+    end
+  end
 
   # `ValidateRead` ensures the action paginates by keyset or offset.
   defp stream_strategy(%{pagination: %{keyset?: true}}), do: :keyset

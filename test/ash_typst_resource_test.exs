@@ -1109,6 +1109,91 @@ defmodule AshTypst.ResourceTest do
       end
     end
 
+    test "ValidateFormatOptions catches `preflight?` on a `:one` read" do
+      expected = """
+      [AshTypst.ResourceTest.OnePreflight]
+      typst -> render_doc -> read -> preflight? defined in <FILE:LINE>:
+        Render :render_doc: `read :one` does not support `preflight?`.
+      │
+      <LINE> │                 preflight? false
+      │                 ~~~~~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
+
+      assert_dsl_error expected do
+        defmodule OnePreflight do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          @derive AshTypst.Code
+
+          actions do
+            defaults [:read]
+          end
+
+          typst do
+            template :doc do
+              markup "= Test"
+            end
+
+            render :render_doc do
+              template :doc
+              format :pdf
+
+              read :one do
+                preflight? false
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "ValidateFormatOptions catches `preflight?` with `stream_with :none`" do
+      expected = """
+      [AshTypst.ResourceTest.UnstreamedPreflight]
+      typst -> render_doc -> read -> preflight? defined in <FILE:LINE>:
+        Render :render_doc: `stream_with :none` does not support `preflight?`.
+      │
+      <LINE> │                 preflight? false
+      │                 ~~~~~~~~~~~~~~~~
+      │
+      └─ <FILE:LINE>: (file)\
+      """
+
+      assert_dsl_error expected do
+        defmodule UnstreamedPreflight do
+          use Ash.Resource,
+            domain: AshTypst.ResourceTest.TestDomain,
+            extensions: [AshTypst.Resource]
+
+          @derive AshTypst.Code
+
+          actions do
+            defaults [:read]
+          end
+
+          typst do
+            template :doc do
+              markup "= Test"
+            end
+
+            render :render_doc do
+              template :doc
+              format :pdf
+
+              read :many do
+                stream_with :none
+                preflight? false
+              end
+            end
+          end
+        end
+      end
+    end
+
     test "ValidateFormatOptions catches `stream_with` on a `:one` read" do
       expected = """
       [AshTypst.ResourceTest.OneStreamWith]
