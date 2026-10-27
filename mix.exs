@@ -200,7 +200,10 @@ defmodule AshTypst.MixProject do
         "spark.replace_doc_links"
       ],
       build: ["compile --force", "format.all", "docs"],
-      "nif.checksum": ["rustler_precompiled.download AshTypst.NIF --all --print"],
+      "nif.checksum": [
+        "compile --force",
+        "rustler_precompiled.download AshTypst.NIF --all --print"
+      ],
       publish: ["nif.checksum", "hex.publish"]
     ]
   end
