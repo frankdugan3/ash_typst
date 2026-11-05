@@ -1464,35 +1464,8 @@ defmodule AshTypst.ResourceTest do
     end
 
     test "a `:one` read does not need pagination" do
-      defmodule UnpaginatedOne do
-        use Ash.Resource,
-          domain: AshTypst.ResourceTest.TestDomain,
-          extensions: [AshTypst.Resource]
-
-        @derive AshTypst.Code
-
-        actions do
-          defaults [:read]
-          read :unpaginated
-        end
-
-        typst do
-          template :doc do
-            markup "= Test"
-          end
-
-          render :render_doc do
-            template :doc
-            format :pdf
-
-            read :one do
-              action :unpaginated
-            end
-          end
-        end
-      end
-
-      assert UnpaginatedOne.__info__(:module) == UnpaginatedOne
+      assert [%{name: :render_doc, read: %{cardinality: :one, action: :unpaginated}}] =
+               AshTypst.Resource.Info.renders(AshTypst.Test.UnpaginatedOne)
     end
   end
 

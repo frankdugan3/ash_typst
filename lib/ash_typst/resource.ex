@@ -239,6 +239,7 @@ defmodule AshTypst.Resource do
     transformers: [
       AshTypst.Resource.Transformers.BuildActions,
       AshTypst.Resource.Transformers.ValidateTemplateRefs,
+      AshTypst.Resource.Transformers.ValidateTemplateSources,
       AshTypst.Resource.Transformers.ValidateFormatOptions,
       AshTypst.Resource.Transformers.ValidateRead,
       AshTypst.Resource.Transformers.ValidateCodeDerivation

@@ -162,6 +162,38 @@ defmodule AshTypst do
     ContextPool.flush()
   end
 
+  @doc ~S"""
+  Check the syntax of Typst markup without compiling it.
+
+  The markup is only parsed: imports, packages, fonts, inputs and virtual
+  files are not resolved, so this is safe for templates whose dependencies
+  only exist at render time. It is the same check the `~TYPST` sigil runs at
+  compile time (see `AshTypst.Sigil`).
+
+  Returns `{:ok, warnings}` when the markup parses, or
+  `{:error, %AshTypst.CompileError{}}` with the syntax errors (followed by
+  any warnings). Diagnostic spans are relative to `markup`.
+
+  ## Examples
+
+      iex> AshTypst.validate_syntax(~S(#import "data.typ": record))
+      {:ok, []}
+
+      iex> {:error, %AshTypst.CompileError{diagnostics: [error]}} =
+      ...>   AshTypst.validate_syntax("#let x = (1, 2")
+      iex> error.message
+      "unclosed delimiter"
+  """
+  def validate_syntax(markup) when is_binary(markup) do
+    diagnostics = NIF.validate_syntax(markup)
+
+    if Enum.any?(diagnostics, &(&1.severity == :error)) do
+      {:error, %AshTypst.CompileError{diagnostics: diagnostics}}
+    else
+      {:ok, diagnostics}
+    end
+  end
+
   @doc """
   Evict Typst's memoization cache and return the freed memory to the OS.
 

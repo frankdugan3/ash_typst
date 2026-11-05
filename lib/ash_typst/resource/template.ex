@@ -9,6 +9,11 @@ defmodule AshTypst.Resource.Template do
   The `~TYPST` sigil is auto-imported inside `template` blocks, so you can use
   it directly for inline markup without any manual imports.
 
+  Both forms are checked for Typst syntax errors at compile time: inline
+  markup by the `~TYPST` sigil (see `AshTypst.Sigil`), and `source` files
+  when the resource compiles, with errors reporting the template file's path,
+  line and column.
+
   For the full DSL reference, see `d:AshTypst.Resource.typst.template`.
   """
   defstruct [:name, :source, :markup, :inputs, __identifier__: nil, __spark_metadata__: nil]
@@ -21,7 +26,12 @@ defmodule AshTypst.Resource.Template do
     ],
     source: [
       type: :string,
-      doc: "File path relative to the `root` directory."
+      doc: """
+      File path relative to the `root` directory. The file's Typst syntax is
+      checked when the resource compiles (imports and other render-time
+      dependencies are not resolved), and editing the file recompiles the
+      resource.
+      """
     ],
     markup: [
       type: :string,

@@ -13,7 +13,9 @@ use typst::diag::{FileError, FileResult, Severity, SourceDiagnostic};
 use typst::ecow::EcoVec;
 use typst::foundations::{Bytes, Datetime, Dict, Duration, Smart, Str, Value};
 use typst::layout::PageRanges;
-use typst::syntax::{DiagSpan, FileId, RootedPath, Source, VirtualPath, VirtualRoot};
+use typst::syntax::{
+    DiagSpan, DiagSpanKind, FileId, RootedPath, Source, SyntaxDiagnostic, VirtualPath, VirtualRoot,
+};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
 use typst::{Feature, Features, Library, LibraryExt, World, WorldExt};
@@ -994,6 +996,56 @@ fn evict_cache(max_age: usize) -> Atom {
     comemo::evict(max_age);
     release_freed_memory();
     ok()
+}
+
+fn syntax_span_to_nif(span: DiagSpan, source: &Source) -> Option<SpanNif> {
+    let range = match span.get() {
+        DiagSpanKind::Detached => return None,
+        DiagSpanKind::Number { num, sub_range, .. } => source.range(num, sub_range)?,
+        DiagSpanKind::Range { range, .. } => range,
+    };
+
+    let (line, column) = source
+        .lines()
+        .byte_to_line_column(range.start)
+        .map(|(line, column)| (Some(line + 1), Some(column + 1)))
+        .unwrap_or((None, None));
+
+    Some(SpanNif {
+        start: range.start,
+        end: range.end,
+        line,
+        column,
+    })
+}
+
+fn syntax_diagnostic_to_nif(d: &SyntaxDiagnostic, source: &Source) -> DiagnosticNif {
+    DiagnosticNif {
+        severity: if d.is_error {
+            SeverityNif::Error
+        } else {
+            SeverityNif::Warning
+        },
+        message: d.message.to_string(),
+        span: syntax_span_to_nif(d.span, source),
+        trace: vec![],
+        hints: d.hints.iter().map(|h| h.v.to_string()).collect(),
+    }
+}
+
+/// Parse `markup` without evaluating it and return its syntax errors and
+/// warnings. Nothing is resolved (imports, packages, fonts, inputs), so this
+/// is safe for templates whose dependencies only exist at render time.
+#[rustler::nif(schedule = "DirtyCpu")]
+fn validate_syntax(markup: String) -> Vec<DiagnosticNif> {
+    let source = Source::detached(markup);
+    let (errors, warnings) = source.root().errors_and_warnings();
+
+    errors
+        .iter()
+        .chain(warnings.iter())
+        .map(|d| syntax_diagnostic_to_nif(d, &source))
+        .collect()
 }
 
 #[rustler::nif]

@@ -161,7 +161,7 @@ Declares a reusable Typst template.
 
 | Name | Type | Default | Docs |
 |------|------|---------|------|
-| [`source`](#typst-template-source){: #typst-template-source } | `String.t` |  | File path relative to the `root` directory. |
+| [`source`](#typst-template-source){: #typst-template-source } | `String.t` |  | File path relative to the `root` directory. The file's Typst syntax is checked when the resource compiles (imports and other render-time dependencies are not resolved), and editing the file recompiles the resource. |
 | [`markup`](#typst-template-markup){: #typst-template-markup } | `String.t` |  | Inline Typst markup string (`~TYPST` sigil is auto-imported). |
 | [`inputs`](#typst-template-inputs){: #typst-template-inputs } | `map` |  | Static `sys.inputs` key/value pairs (string keys and values). |
 
