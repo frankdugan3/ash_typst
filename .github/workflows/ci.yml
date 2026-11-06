@@ -28,6 +28,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.97.1
+          targets: wasm32-unknown-unknown
 
       - name: Cache Elixir dependencies
         uses: actions/cache@v5
@@ -43,6 +44,13 @@ jobs:
         with:
           workspaces: native/typst_nif
 
+      # wasm-bindgen-cli must be the version of the crate in the lock.
+      - name: Install wasm-bindgen-cli
+        shell: bash
+        run: |
+          version="$(grep -A1 '^name = "wasm-bindgen"$' native/typst_nif/Cargo.lock | sed -n 's/^version = "\(.*\)"/\1/p')"
+          cargo install wasm-bindgen-cli --version "$version" --locked
+
       - name: Install dependencies
         run: mix deps.get
 
@@ -51,6 +59,9 @@ jobs:
 
       - name: Check formatting
         run: mix format --check-formatted
+
+      - name: Build the WASM editing module
+        run: MIX_ENV=test mix ash_typst.wasm.build
 
       - name: Run tests
         run: mix test

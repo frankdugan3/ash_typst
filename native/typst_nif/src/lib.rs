@@ -1,6 +1,8 @@
 use chrono::{DateTime, Datelike, FixedOffset, Local, Utc};
 use parking_lot::Mutex;
-use rustler::{Atom, Binary, Decoder, Encoder, Env, NewBinary, NifStruct, ResourceArc, Term};
+use rustler::{
+    Atom, Binary, Decoder, Encoder, Env, NewBinary, NifMap, NifStruct, ResourceArc, Term,
+};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::panic::{RefUnwindSafe, UnwindSafe};
@@ -16,7 +18,7 @@ use typst::layout::PageRanges;
 use typst::syntax::{
     DiagSpan, DiagSpanKind, FileId, RootedPath, Source, SyntaxDiagnostic, VirtualPath, VirtualRoot,
 };
-use typst::text::{Font, FontBook};
+use typst::text::{Font, FontBook, FontFlags, FontInfo, FontStyle};
 use typst::utils::LazyHash;
 use typst::{Feature, Features, Library, LibraryExt, World, WorldExt};
 use typst_bundle::{export as export_bundle, Bundle, BundleOptions};
@@ -823,6 +825,75 @@ fn context_font_families(ctx: ResourceArc<TypstContext>) -> Vec<String> {
         .collect()
 }
 
+/// A variation axis of a font face (`AshTypst.Context.font_faces/1`).
+#[derive(NifMap, PartialEq)]
+pub struct FontAxisNif {
+    pub tag: String,
+    pub min: f64,
+    pub max: f64,
+    pub default: f64,
+}
+
+/// The metadata of a font face that the editing module of the browser
+/// needs (`AshTypst.Wasm.fonts/1`): no glyph coverage, no font data.
+#[derive(NifMap, PartialEq)]
+pub struct FontFaceNif {
+    pub family: String,
+    pub style: String,
+    pub weight: u16,
+    pub stretch: f64,
+    pub math: bool,
+    pub variable: bool,
+    pub axes: Vec<FontAxisNif>,
+}
+
+fn font_face(info: &FontInfo) -> FontFaceNif {
+    FontFaceNif {
+        family: info.family.clone(),
+        style: match info.variant.style {
+            FontStyle::Normal => "normal",
+            FontStyle::Italic => "italic",
+            FontStyle::Oblique => "oblique",
+        }
+        .to_string(),
+        weight: info.variant.weight.to_number(),
+        stretch: info.variant.stretch.to_ratio().get(),
+        math: info.flags.contains(FontFlags::MATH),
+        variable: info.flags.contains(FontFlags::VARIABLE),
+        axes: info
+            .axes
+            .iter()
+            .map(|axis| FontAxisNif {
+                tag: axis.tag.to_str_lossy().into_owned(),
+                min: axis.min.0.into(),
+                max: axis.max.0.into(),
+                default: axis.default.0.into(),
+            })
+            .collect(),
+    }
+}
+
+/// One entry per distinct face. A family that is both embedded and
+/// installed on the system has its faces twice in the book.
+fn font_faces(book: &FontBook) -> Vec<FontFaceNif> {
+    let mut out = Vec::new();
+    for (_family, ids) in book.families() {
+        let start = out.len();
+        for face in ids.filter_map(|id| book.info(id)).map(font_face) {
+            if !out[start..].contains(&face) {
+                out.push(face);
+            }
+        }
+    }
+    out
+}
+
+#[rustler::nif]
+fn context_font_faces(ctx: ResourceArc<TypstContext>) -> Vec<FontFaceNif> {
+    let world = ctx.world.lock();
+    font_faces(world.fonts.book())
+}
+
 #[rustler::nif]
 fn context_set_virtual_file(ctx: ResourceArc<TypstContext>, path: String, content: String) -> Atom {
     let mut world = ctx.world.lock();
@@ -1046,6 +1117,12 @@ fn validate_syntax(markup: String) -> Vec<DiagnosticNif> {
         .chain(warnings.iter())
         .map(|d| syntax_diagnostic_to_nif(d, &source))
         .collect()
+}
+
+/// The version of the Typst crates of this build (`AshTypst.Wasm.identity/0`).
+#[rustler::nif]
+fn typst_version() -> &'static str {
+    typst::utils::version().raw()
 }
 
 #[rustler::nif]

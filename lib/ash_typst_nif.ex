@@ -27,6 +27,7 @@ defmodule AshTypst.NIF do
   def context_render_svg(_ctx, _page, _pretty, _render_bleed), do: :erlang.nif_error(:not_loaded)
   def context_export_pdf(_ctx, _opts), do: :erlang.nif_error(:not_loaded)
   def context_font_families(_ctx), do: :erlang.nif_error(:not_loaded)
+  def context_font_faces(_ctx), do: :erlang.nif_error(:not_loaded)
   def context_set_virtual_file(_ctx, _path, _content), do: :erlang.nif_error(:not_loaded)
   def context_set_virtual_file_binary(_ctx, _path, _content), do: :erlang.nif_error(:not_loaded)
   def context_append_virtual_file(_ctx, _path, _chunk), do: :erlang.nif_error(:not_loaded)
@@ -38,6 +39,7 @@ defmodule AshTypst.NIF do
   def context_export_bundle(_ctx, _opts), do: :erlang.nif_error(:not_loaded)
   def font_families(_opts), do: :erlang.nif_error(:not_loaded)
   def clear_font_cache, do: :erlang.nif_error(:not_loaded)
+  def typst_version, do: :erlang.nif_error(:not_loaded)
   def evict_cache(_max_age), do: :erlang.nif_error(:not_loaded)
   def validate_syntax(_markup), do: :erlang.nif_error(:not_loaded)
 end

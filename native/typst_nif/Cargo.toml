@@ -37,3 +37,12 @@ typst-bundle = "0.15"
 
 [target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
 libc = "0.2"
+
+[workspace]
+members = [".", "wasm"]
+
+[profile.wasm]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1

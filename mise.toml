@@ -1,3 +1,7 @@
 [tools]
 perl = "latest"
-rust = "latest"
+rust = { version = "latest", targets = "wasm32-unknown-unknown" }
+"cargo:wasm-bindgen-cli" = "0.2.130"
+"github:WebAssembly/binaryen" = "version_123"
+elixir = "latest"
+erlang = "latest"

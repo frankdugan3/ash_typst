@@ -32,7 +32,8 @@ defmodule AshTypst.MixProject do
         "documentation/topics/templating.md",
         "documentation/topics/large-documents.md",
         "documentation/topics/multi-language.md",
-        "documentation/topics/security/sensitive-data.md"
+        "documentation/topics/security/sensitive-data.md",
+        "documentation/topics/browser-editor.md"
       ],
       groups_for_extras: [
         Topics: ~r"documentation/topics",
@@ -55,6 +56,9 @@ defmodule AshTypst.MixProject do
           AshTypst.PathResolver,
           AshTypst.Document,
           AshTypst.Type.Document
+        ],
+        "Browser Editor": [
+          AshTypst.Wasm
         ],
         "Results & Diagnostics": [
           AshTypst.CompileResult,
@@ -102,6 +106,10 @@ defmodule AshTypst.MixProject do
         "native/typst_nif/.cargo",
         "native/typst_nif/src",
         "native/typst_nif/Cargo*",
+        "native/typst_nif/wasm/src",
+        "native/typst_nif/wasm/js",
+        "native/typst_nif/wasm/build.rs",
+        "native/typst_nif/wasm/Cargo.toml",
         "checksum-*.exs",
         ".formatter.exs",
         "mix.exs",
@@ -116,7 +124,8 @@ defmodule AshTypst.MixProject do
 
   def application do
     [
-      extra_applications: [:logger],
+      # `mix ash_typst.wasm.install` downloads with `:httpc`.
+      extra_applications: [:logger, inets: :optional, ssl: :optional, public_key: :optional],
       mod: {AshTypst.Application, []}
     ]
   end
@@ -188,10 +197,12 @@ defmodule AshTypst.MixProject do
 
   defp aliases do
     [
+      # `native/typst_nif` is the Cargo workspace of the NIF and the browser
+      # module (`wasm/`): one lock for both.
       update: ["deps.update --all", "cmd --cd native/typst_nif cargo update --verbose"],
       "format.all": [
         "spark.formatter --extensions AshTypst.Resource",
-        "cmd --cd native/typst_nif cargo fmt"
+        "cmd --cd native/typst_nif cargo fmt --all"
       ],
       outdated: ["hex.outdated", "cmd --cd native/typst_nif cargo update --locked --verbose"],
       setup: ["deps.get", "cmd --cd native/typst_nif cargo fetch"],
@@ -205,7 +216,7 @@ defmodule AshTypst.MixProject do
         "compile --force",
         "rustler_precompiled.download AshTypst.NIF --all --print"
       ],
-      publish: ["nif.checksum", "hex.publish"]
+      publish: ["nif.checksum", "ash_typst.wasm.checksum", "hex.publish"]
     ]
   end
 end

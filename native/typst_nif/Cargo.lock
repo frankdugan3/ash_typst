@@ -680,8 +680,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -2215,6 +2217,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-wasm-bindgen"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "serde_core"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2757,6 +2770,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "typst-ide"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ffbba2bc8bb6b08410e4ee6f8ca04f12e79c9f42d37d03b0776870a8920c08b"
+dependencies = [
+ "comemo",
+ "ecow",
+ "indexmap",
+ "rustc-hash",
+ "serde",
+ "typst",
+ "typst-eval",
+ "typst-html",
+ "typst-layout",
+ "typst-utils",
+ "unscanny",
+]
+
+[[package]]
 name = "typst-kit"
 version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3063,6 +3095,19 @@ dependencies = [
  "typst-pdf",
  "typst-svg",
  "typst-timing",
+]
+
+[[package]]
+name = "typst_wasm"
+version = "0.1.0"
+dependencies = [
+ "getrandom",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "typst",
+ "typst-ide",
+ "wasm-bindgen",
 ]
 
 [[package]]

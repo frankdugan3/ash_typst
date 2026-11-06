@@ -29,17 +29,17 @@ jobs:
           - { target: aarch64-unknown-linux-gnu   , os: ubuntu-22.04 , use-cross: true , rustflags: "-C codegen-units=1" }
           - { target: aarch64-unknown-linux-musl  , os: ubuntu-22.04 , use-cross: true , rustflags: "-C target-feature=-crt-static -C codegen-units=1" }
           - { target: arm-unknown-linux-gnueabihf , os: ubuntu-22.04 , use-cross: true }
-          - { target: aarch64-apple-darwin        , os: macos-14      }
+          - { target: aarch64-apple-darwin        , os: macos-15     }
           - { target: riscv64gc-unknown-linux-gnu , os: ubuntu-22.04 , use-cross: true }
-          - { target: x86_64-apple-darwin         , os: macos-14      }
+          - { target: x86_64-apple-darwin         , os: macos-15     }
           - { target: x86_64-unknown-linux-gnu    , os: ubuntu-22.04  }
           - { target: x86_64-unknown-linux-musl   , os: ubuntu-22.04 , use-cross: true }
-          - { target: x86_64-pc-windows-gnu       , os: windows-2022  }
-          - { target: x86_64-pc-windows-msvc      , os: windows-2022  }
+          - { target: x86_64-pc-windows-gnu       , os: windows-2022 }
+          - { target: x86_64-pc-windows-msvc      , os: windows-2022 }
 
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Extract project version
         shell: bash
@@ -55,7 +55,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.97.1
+          toolchain: 1.99.1
           targets: ${{ matrix.job.target }}
 
       - uses: Swatinem/rust-cache@v2
@@ -78,19 +78,97 @@ jobs:
           cross-version: "from-source"
 
       - name: Artifact attestation
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: ${{ steps.build-crate.outputs.file-path }}
 
       - name: Artifact upload
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.build-crate.outputs.file-name }}
           path: ${{ steps.build-crate.outputs.file-path }}
 
       - name: Publish archives and packages
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             ${{ steps.build-crate.outputs.file-path }}
+        if: startsWith(github.ref, 'refs/tags/')
+
+  # The Typst editing module of the browser (`AshTypst.Wasm`). It is one
+  # build for all platforms (`mix ash_typst.wasm.build --release`). The mix
+  # task compiles the project first, thus the NIF too (from source in dev).
+  build_wasm:
+    name: WASM editing module
+    runs-on: ubuntu-22.04
+
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.20.5-otp-29"
+          otp-version: "29.1.2"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.1
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v0-wasm
+          workspaces: |
+            native/typst_nif
+
+      # wasm-bindgen-cli must be the version of the crate in the lock.
+      - name: Install wasm-bindgen-cli
+        shell: bash
+        run: |
+          version="$(grep -A1 '^name = "wasm-bindgen"$' native/typst_nif/Cargo.lock | sed -n 's/^version = "\(.*\)"/\1/p')"
+          cargo install wasm-bindgen-cli --version "$version" --locked
+
+      - name: Install binaryen
+        shell: bash
+        env:
+          BINARYEN_VERSION: version_133
+        run: |
+          curl -sSfL "https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN_VERSION}/binaryen-${BINARYEN_VERSION}-x86_64-linux.tar.gz" | tar -xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/binaryen-${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
+
+      - name: Install Elixir dependencies
+        run: mix deps.get
+
+      - name: Build the module
+        id: build-wasm
+        shell: bash
+        run: |
+          mix ash_typst.wasm.build --release dist
+          version="$(sed -n 's/^  @version "\(.*\)"/\1/p' mix.exs | head -n1)"
+          echo "file-path=dist/ash_typst_wasm-v${version}.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Artifact attestation
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: ${{ steps.build-wasm.outputs.file-path }}
+
+      - name: Artifact upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: ash_typst_wasm
+          path: ${{ steps.build-wasm.outputs.file-path }}
+
+      - name: Publish archive
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            ${{ steps.build-wasm.outputs.file-path }}
         if: startsWith(github.ref, 'refs/tags/')

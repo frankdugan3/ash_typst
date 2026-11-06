@@ -134,6 +134,34 @@ defmodule AshTypst.Context do
     call(ctx, :context_font_families, [])
   end
 
+  @typedoc "A variation axis of a font face (an OpenType tag such as `\"wght\"`)."
+  @type font_axis :: %{tag: String.t(), min: float(), max: float(), default: float()}
+
+  @typedoc """
+  The metadata of a font face. `stretch` is a ratio (`1.0` is normal), and
+  `weight` is 100 to 900. For a variable font, the values are the ones of
+  the default instance, and `axes` has the ranges.
+  """
+  @type font_face :: %{
+          family: String.t(),
+          style: String.t(),
+          weight: non_neg_integer(),
+          stretch: float(),
+          math: boolean(),
+          variable: boolean(),
+          axes: [font_axis()]
+        }
+
+  @doc """
+  List the font faces available in this context, with their metadata (no
+  glyph coverage, no font data). The editing module of the browser takes
+  this list (`AshTypst.Wasm.fonts/1`).
+  """
+  @spec font_faces(term()) :: [font_face()]
+  def font_faces(ctx) do
+    call(ctx, :context_font_faces, [])
+  end
+
   @doc "Set (or overwrite) a virtual file with text content. Invalidates the compiled document."
 
   def set_virtual_file(ctx, path, content) when is_binary(path) and is_binary(content) do

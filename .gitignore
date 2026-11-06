@@ -30,3 +30,8 @@ checksum-*.exs
 /tmp/
 priv/native
 .lexical
+
+# The Typst editing module (`mix ash_typst.wasm.build`) and its release
+# archive (`--release dist`).
+/priv/static/
+/dist/
