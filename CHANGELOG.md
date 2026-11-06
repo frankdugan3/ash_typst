@@ -5,6 +5,15 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.6.1](https://github.com/frankdugan3/ash_typst/compare/v0.6.0...v0.6.1) (2026-11-06)
+
+
+
+
+### Bug Fixes:
+
+* properly handle errors by Frank Polasek Dugan III
+
 ## [v0.6.0](https://github.com/frankdugan3/ash_typst/compare/v0.5.0...v0.6.0) (2026-11-06)
 
 
