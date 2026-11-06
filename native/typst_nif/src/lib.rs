@@ -32,10 +32,10 @@ use typst_pdf::{PdfOptions, PdfStandard, PdfStandards};
 use typst_svg::SvgOptions;
 use typst_timing::{timed, TimingScope};
 
-static MARKUP_ID: LazyLock<FileId> = LazyLock::new(|| {
+static MAIN_ID: LazyLock<FileId> = LazyLock::new(|| {
     FileId::unique(RootedPath::new(
         VirtualRoot::Project,
-        VirtualPath::new("MARKUP.typ").unwrap(),
+        VirtualPath::new("main.typ").unwrap(),
     ))
 });
 
@@ -333,7 +333,7 @@ impl SystemWorld {
         let user_agent = concat!("typst/", env!("CARGO_PKG_VERSION"));
         Self {
             root,
-            main: *MARKUP_ID,
+            main: *MAIN_ID,
             markup: String::new(),
             library: LazyHash::new(Library::builder().with_features(enabled_features()).build()),
             fonts,
@@ -385,7 +385,7 @@ impl World for SystemWorld {
     }
 
     fn source(&self, id: FileId) -> FileResult<Source> {
-        if id == *MARKUP_ID {
+        if id == *MAIN_ID {
             return Ok(Source::new(id, self.markup.clone()));
         }
 

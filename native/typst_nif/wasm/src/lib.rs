@@ -9,7 +9,7 @@
 //!
 //! The crate is in the workspace of the NIF, with one lock, so the parser and
 //! the analysis are the same as on the server. The world has the structure
-//! of the `SystemWorld` of the NIF: the main file is `MARKUP.typ` at the
+//! of the `SystemWorld` of the NIF: the main file is `main.typ` at the
 //! project root, the other files are virtual files at their paths, and the
 //! library has the same features.
 //!
@@ -32,10 +32,10 @@ use typst::{Feature, Features, Library, LibraryExt, World, WorldExt};
 use typst_ide::{Completion, CompletionKind, Definition, IdeWorld, Tooltip};
 use wasm_bindgen::prelude::*;
 
-static MARKUP_ID: LazyLock<FileId> = LazyLock::new(|| {
+static MAIN_ID: LazyLock<FileId> = LazyLock::new(|| {
     FileId::unique(RootedPath::new(
         VirtualRoot::Project,
-        VirtualPath::new("MARKUP.typ").unwrap(),
+        VirtualPath::new("main.typ").unwrap(),
     ))
 });
 
@@ -58,7 +58,7 @@ struct EditorWorld {
 impl EditorWorld {
     fn id(&self, path: &str) -> FileId {
         if path == self.entry {
-            *MARKUP_ID
+            *MAIN_ID
         } else {
             FileId::unique(RootedPath::new(
                 VirtualRoot::Project,
@@ -68,7 +68,7 @@ impl EditorWorld {
     }
 
     fn path_of(&self, id: FileId) -> String {
-        if id == *MARKUP_ID {
+        if id == *MAIN_ID {
             self.entry.clone()
         } else {
             id.vpath().get_without_slash().to_string()
@@ -86,7 +86,7 @@ impl World for EditorWorld {
     }
 
     fn main(&self) -> FileId {
-        *MARKUP_ID
+        *MAIN_ID
     }
 
     fn source(&self, id: FileId) -> FileResult<Source> {
