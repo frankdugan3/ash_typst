@@ -5,6 +5,17 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.6.0](https://github.com/frankdugan3/ash_typst/compare/v0.5.0...v0.6.0) (2026-11-06)
+
+
+
+
+### Features:
+
+* add WASM binary for editor integrations by Frank Polasek Dugan III
+
+* .typ and ~TYPST parsing/validation by Frank Polasek Dugan III
+
 ## [v0.5.0](https://github.com/frankdugan3/ash_typst/compare/v0.4.0...v0.5.0) (2026-10-27)
 
 This release focuses on **large documents**: records are really streamed,
