@@ -129,7 +129,10 @@ defmodule AshTypst.TemplateSourceTest do
            """
   end
 
-  test "reports every syntax error in the file, with hints" do
+  # Regression: after an unclosed delimiter, Typst parses the rest of the file
+  # as code, thus one typo gave an error for each word after it. Only the
+  # first error is reported.
+  test "reports only the first syntax error in the file" do
     {error, _stderr} =
       __capture_dsl_error__(fn ->
         defmodule MultipleErrorsSource do
@@ -154,16 +157,10 @@ defmodule AshTypst.TemplateSourceTest do
                 │
               2 │ #f(a: 1, b:)
                 │            ^
-                │
-
-             test/fixtures/typst/multiple_errors.typ:3:4: the character `#` is not valid in code
-                │
-              3 │ #f(#x)
-                │    ~
-                │
-               hint: you are already in code mode
-               hint: try removing the `#`\
+                │\
            """
+
+    refute Exception.message(error) =~ "not valid in code"
 
     assert source_line(error) == line_of(~s(source "multiple_errors.typ"))
   end

@@ -52,7 +52,6 @@ defmodule AshTypst.MixProject do
           AshTypst.Isolated,
           AshTypst.Isolated.Error,
           AshTypst.Sigil,
-          AshTypst.Sigil.SyntaxError,
           AshTypst.PathResolver,
           AshTypst.Document,
           AshTypst.Type.Document

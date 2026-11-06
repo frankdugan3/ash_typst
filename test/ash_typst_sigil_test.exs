@@ -6,17 +6,18 @@ defmodule AshTypst.SigilTest do
 
   import AshTypst.Sigil
 
-  alias AshTypst.Sigil.SyntaxError
-
   @file_name "lib/example.ex"
 
   defp compile!(source), do: Code.compile_string(source, @file_name)
 
+  # A syntax error is a `CompileError`, the error that the Elixir tooling and
+  # the language servers know: they place it at its `file` and `line`. The
+  # snippet in the message shows the column.
   defp compile_error(source) do
-    assert_raise SyntaxError, fn -> compile!(source) end
+    error = assert_raise CompileError, fn -> compile!(source) end
+    assert error.file == @file_name
+    error
   end
-
-  defp location(%SyntaxError{} = e), do: {e.line, e.column, e.end_line, e.end_column}
 
   describe "~TYPST sigil" do
     test "returns plain string" do
@@ -65,7 +66,7 @@ defmodule AshTypst.SigilTest do
                end)
     end
 
-    test "reports an error in an inline sigil at its position in the Elixir file" do
+    test "reports an error in an inline sigil at its line in the Elixir file" do
       error =
         compile_error(~S'''
         import AshTypst.Sigil
@@ -73,28 +74,17 @@ defmodule AshTypst.SigilTest do
         ''')
 
       assert Exception.message(error) == """
-             lib/example.ex:2:21: unclosed delimiter
+             lib/example.ex:2: unclosed delimiter
                 │
               2 │ #let x = (1, 2
                 │          ~
                 │\
              """
 
-      assert location(error) == {2, 21, 2, 22}
-      assert error.file == @file_name
+      assert error.line == 2
     end
 
-    test "accounts for the delimiter of an inline sigil" do
-      error =
-        compile_error(~S'''
-        import AshTypst.Sigil
-            ~TYPST|= Title #f(a: 1, b:)|
-        ''')
-
-      assert location(error) == {2, 31, 2, 32}
-    end
-
-    test "reports an error in a heredoc sigil, accounting for its indentation" do
+    test "reports an error in a heredoc sigil at its line in the Elixir file" do
       error =
         compile_error(~S'''
         defmodule AshTypst.SigilTest.HeredocError do
@@ -110,49 +100,86 @@ defmodule AshTypst.SigilTest do
         ''')
 
       assert Exception.message(error) == """
-             lib/example.ex:7:14: unclosed delimiter
+             lib/example.ex:7: unclosed delimiter
                 │
               7 │ #let x = (1, 2
                 │          ~
                 │\
              """
 
-      assert location(error) == {7, 14, 7, 15}
+      assert error.line == 7
     end
 
-    test "reports every error with hints, locating the raise at the first" do
+    # Regression: an error raised as another exception than `CompileError`
+    # was placed by the language servers at the `~TYPST` line (the frame of
+    # the macro expansion), not at the line of the error.
+    test "is a CompileError at the line of the error, not of the sigil" do
       error =
         compile_error(~S'''
         import AshTypst.Sigil
 
         ~TYPST"""
         = Title
-        #f(a: 1, b:)
-        #f(#x)
+
+        #let x = (1, 2
+        """
+        ''')
+
+      assert %CompileError{line: 6} = error
+    end
+
+    # Regression: after an unclosed delimiter, Typst parses the rest of the
+    # markup as code, thus one typo gave an error for each word after it.
+    # Only the first error is reported, as Elixir reports its own syntax
+    # errors.
+    test "reports only the first error, not the errors that follow from it" do
+      error =
+        compile_error(~S'''
+        import AshTypst.Sigil
+
+        ~TYPST"""
+        #set (document(title: "x")
+        #set page(paper: "us-letter")
+
+        = #heading
+
+        Add a data source, then import its variable.
         """
         ''')
 
       assert Exception.message(error) == """
-             lib/example.ex:5:12: expected expression
+             lib/example.ex:4: expected identifier
                 │
-              5 │ #f(a: 1, b:)
-                │            ^
+              4 │ #set (document(title: "x")
+                │     ^
                 │
+               hint: there may not be any spaces before the argument list\
+             """
 
-             lib/example.ex:6:4: the character `#` is not valid in code
+      assert error.line == 4
+    end
+
+    test "reports the first of two independent errors, with its hints" do
+      error =
+        compile_error(~S'''
+        import AshTypst.Sigil
+
+        ~TYPST"""
+        = Title
+        #f(#x)
+        #f(a: 1, b:)
+        """
+        ''')
+
+      assert Exception.message(error) == """
+             lib/example.ex:5: the character `#` is not valid in code
                 │
-              6 │ #f(#x)
+              5 │ #f(#x)
                 │    ~
                 │
                hint: you are already in code mode
                hint: try removing the `#`\
              """
-
-      # Empty ranges are widened to one column so editors can underline them.
-      assert location(error) == {5, 12, 5, 13}
-
-      assert [%{message: "expected expression"}, %{message: "the character" <> _}] =
-               error.diagnostics
     end
 
     test "uses two-digit gutters for line numbers of two digits" do
@@ -171,7 +198,7 @@ defmodule AshTypst.SigilTest do
         ''')
 
       assert Exception.message(error) == """
-             lib/example.ex:10:17: unclosed delimiter
+             lib/example.ex:10: unclosed delimiter
                  │
               10 │ #let x = (1, 2
                  │          ~
@@ -179,14 +206,20 @@ defmodule AshTypst.SigilTest do
              """
     end
 
-    test "counts columns in codepoints, not bytes" do
+    test "counts snippet columns in codepoints, not bytes" do
       error =
         compile_error(~S'''
         import AshTypst.Sigil
         ~TYPST"= Größe #f(a:)"
         ''')
 
-      assert location(error) == {2, 21, 2, 22}
+      assert Exception.message(error) == """
+             lib/example.ex:2: expected expression
+                │
+              2 │ = Größe #f(a:)
+                │              ^
+                │\
+             """
     end
 
     test "emits syntax warnings as compiler warnings at their position" do
@@ -209,7 +242,7 @@ defmodule AshTypst.SigilTest do
     end
 
     @tag :tmp_dir
-    test "produces a compiler diagnostic with a source span for editors", %{tmp_dir: dir} do
+    test "produces a compiler diagnostic at the line of the error", %{tmp_dir: dir} do
       file = Path.join(dir, "sigil_lsp.ex")
 
       File.write!(file, ~S'''
@@ -235,10 +268,11 @@ defmodule AshTypst.SigilTest do
       assert %{
                severity: :error,
                file: ^file,
-               position: {7, 18},
-               span: {7, 19},
-               details: {:error, %SyntaxError{}}
+               position: 7,
+               details: {:error, %CompileError{line: 7}}
              } = diagnostic
+
+      assert diagnostic.message =~ "unclosed delimiter"
     end
 
     test "validates markup inside resource template blocks" do
@@ -262,7 +296,7 @@ defmodule AshTypst.SigilTest do
         ''')
 
       assert Exception.message(error) == """
-             lib/example.ex:11:20: unclosed delimiter
+             lib/example.ex:11: unclosed delimiter
                  │
               11 │ #let total = (1, 2
                  │              ~
@@ -287,142 +321,125 @@ defmodule AshTypst.SigilTest do
     end
   end
 
-  describe "marker placement" do
+  describe "error placement" do
     test "inline sigil nested deep in code" do
-      source = ~S'''
-      defmodule AshTypst.SigilTest.DeepInline do
-        import AshTypst.Sigil
+      error =
+        compile_error(~S'''
+        defmodule AshTypst.SigilTest.DeepInline do
+          import AshTypst.Sigil
 
-        def markup(kind) do
-          case kind do
-            :invoice ->
-              Enum.map([1], fn _ ->
-                ~TYPST"= Invoice #f(total: (1, 2)"
-              end)
+          def markup(kind) do
+            case kind do
+              :invoice ->
+                Enum.map([1], fn _ ->
+                  ~TYPST"= Invoice #f(total: (1, 2)"
+                end)
+            end
           end
         end
-      end
-      '''
-
-      error = assert_raise SyntaxError, fn -> compile!(source) end
+        ''')
 
       assert Exception.message(error) == """
-             lib/example.ex:8:30: unclosed delimiter
+             lib/example.ex:8: unclosed delimiter
                 │
               8 │ = Invoice #f(total: (1, 2)
                 │             ~
                 │\
              """
 
-      assert location(error) == {8, 30, 8, 31}
-      assert text_at(source, location(error)) == "("
+      assert error.line == 8
     end
 
     test "inline sigil preceded by other code on the same line" do
-      source = ~S'''
-      import AshTypst.Sigil
-          IO.puts(String.upcase(~TYPST|#let = 1|))
-      '''
-
-      error = assert_raise SyntaxError, fn -> compile!(source) end
+      error =
+        compile_error(~S'''
+        import AshTypst.Sigil
+            IO.puts(String.upcase(~TYPST|#let = 1|))
+        ''')
 
       assert Exception.message(error) == """
-             lib/example.ex:2:38: expected pattern
+             lib/example.ex:2: expected pattern
                 │
               2 │ #let = 1
                 │     ^
                 │\
              """
 
-      # The empty range after `#let` is widened to the following column.
-      assert location(error) == {2, 38, 2, 39}
-
-      assert source
-             |> String.split("\n")
-             |> Enum.at(1)
-             |> String.slice(0, 37)
-             |> String.ends_with?("#let")
+      assert error.line == 2
     end
 
     test "inline sigil whose markup continues on the next lines" do
-      source = ~S'''
-      import AshTypst.Sigil
-      x = ~TYPST"= Title
-      #let s = (1, 2
-      "
-      '''
-
-      error = assert_raise SyntaxError, fn -> compile!(source) end
+      error =
+        compile_error(~S'''
+        import AshTypst.Sigil
+        x = ~TYPST"= Title
+        #let s = (1, 2
+        "
+        ''')
 
       assert Exception.message(error) == """
-             lib/example.ex:3:10: unclosed delimiter
+             lib/example.ex:3: unclosed delimiter
                 │
               3 │ #let s = (1, 2
                 │          ~
                 │\
              """
 
-      assert location(error) == {3, 10, 3, 11}
-      assert text_at(source, location(error)) == "("
+      assert error.line == 3
     end
 
     test "heredoc sigil nested deep in code, with a range spanning lines" do
-      source = ~S'''
-      defmodule AshTypst.SigilTest.DeepHeredoc do
-        import AshTypst.Sigil
+      error =
+        compile_error(~S'''
+        defmodule AshTypst.SigilTest.DeepHeredoc do
+          import AshTypst.Sigil
 
-        def markup(kind) do
-          case kind do
-            :invoice ->
-              Enum.map([1], fn _ ->
-                ~TYPST"""
-                = Title
-                #let s = "abc
-                def
-                """
-              end)
+          def markup(kind) do
+            case kind do
+              :invoice ->
+                Enum.map([1], fn _ ->
+                  ~TYPST"""
+                  = Title
+                  #let s = "abc
+                  def
+                  """
+                end)
+            end
           end
         end
-      end
-      '''
-
-      error = assert_raise SyntaxError, fn -> compile!(source) end
+        ''')
 
       # The snippet underlines the first line of a multi-line range to its end.
       assert Exception.message(error) == """
-             lib/example.ex:10:20: unclosed string
+             lib/example.ex:10: unclosed string
                  │
               10 │ #let s = "abc
                  │          ~~~~
                  │\
              """
 
-      assert location(error) == {10, 20, 12, 11}
-
-      assert text_at(source, location(error)) ==
-               ~s("abc\n          def\n          )
+      assert error.line == 10
     end
 
     test "heredoc sigil with an error in the first column of its markup" do
-      source = ~S'''
-      defmodule AshTypst.SigilTest.FirstColumn do
-        import AshTypst.Sigil
+      error =
+        compile_error(~S'''
+        defmodule AshTypst.SigilTest.FirstColumn do
+          import AshTypst.Sigil
 
-        def markup do
-          if true do
-            ~TYPST"""
-            = Title
-            ] stray
-            """
+          def markup do
+            if true do
+              ~TYPST"""
+              = Title
+              ] stray
+              """
+            end
           end
         end
-      end
-      '''
-
-      error = assert_raise SyntaxError, fn -> compile!(source) end
+        ''')
 
       assert Exception.message(error) == """
-             lib/example.ex:8:7: unexpected closing bracket
+             lib/example.ex:8: unexpected closing bracket
                 │
               8 │ ] stray
                 │ ~
@@ -430,8 +447,7 @@ defmodule AshTypst.SigilTest do
                hint: try using a backslash escape: \\]\
              """
 
-      assert location(error) == {8, 7, 8, 8}
-      assert text_at(source, location(error)) == "]"
+      assert error.line == 8
     end
 
     test "warning in a heredoc sigil nested in code" do
@@ -456,31 +472,17 @@ defmodule AshTypst.SigilTest do
       assert text_at(source, {line, column, line, column + 2}) == "**"
     end
 
-    @tag :tmp_dir
-    test "compiler diagnostic for an inline sigil nested in code", %{tmp_dir: dir} do
-      file = Path.join(dir, "sigil_lsp_inline.ex")
-
+    test "warning in an inline sigil preceded by other code on the same line" do
       source = ~S'''
-      defmodule AshTypst.SigilTest.LspInline do
-        import AshTypst.Sigil
-
-        def markup(kind) do
-          case kind do
-            :invoice -> ~TYPST"= Invoice #let total = (1, 2"
-          end
-        end
-      end
+      import AshTypst.Sigil
+          IO.puts(String.upcase(~TYPST|= Hi **|))
       '''
 
-      File.write!(file, source)
+      assert {[], [%{position: {2, _} = position}]} =
+               Code.with_diagnostics(fn -> compile!(source) end)
 
-      {result, _stderr} =
-        ExUnit.CaptureIO.with_io(:stderr, fn ->
-          Kernel.ParallelCompiler.compile([file], return_diagnostics: true)
-        end)
-
-      assert {:error, [%{position: {6, 49}, span: {6, 50}}], _warnings} = result
-      assert text_at(source, {6, 49, 6, 50}) == "("
+      {line, column} = position
+      assert text_at(source, {line, column, line, column + 2}) == "**"
     end
   end
 

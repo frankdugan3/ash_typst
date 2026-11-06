@@ -22,12 +22,15 @@ defmodule AshTypst.Sigil do
 
   ## Compile-time validation
 
-  The markup is parsed (not evaluated) when the sigil is expanded. Syntax
-  errors such as unclosed delimiters or malformed expressions fail
-  compilation with an `AshTypst.Sigil.SyntaxError` pointing at the exact
-  location inside the Elixir source file, and Typst syntax warnings are
-  emitted as compiler warnings. Both surface inline in editors through the
-  Elixir language servers.
+  The markup is parsed (not evaluated) when the sigil is expanded. A syntax
+  error such as an unclosed delimiter or a malformed expression fails
+  compilation with a `CompileError` at its line in the Elixir source file;
+  the message underlines it in a snippet of the markup. Only the first error
+  is reported: after an unclosed delimiter, Typst parses the rest of the
+  markup as code, so the errors after the first are mostly its echoes.
+  Typst syntax warnings are emitted as compiler warnings at their line and
+  column. Both surface inline in editors through the Elixir language
+  servers.
 
   Because nothing is evaluated, imports, packages, `sys.inputs` and virtual
   files are not resolved: a template that imports `"data.typ"` validates even
@@ -48,8 +51,8 @@ defmodule AshTypst.Sigil do
   Handles the `~TYPST` sigil for Typst markup.
 
   Returns the given string unchanged. Does not perform interpolation
-  or escaping. Raises `AshTypst.Sigil.SyntaxError` at compile time when
-  the markup is not valid Typst syntax.
+  or escaping. Raises a `CompileError` at compile time when the markup is
+  not valid Typst syntax.
 
   ## Examples
 
@@ -77,22 +80,19 @@ defmodule AshTypst.Sigil do
       IO.warn(SyntaxReport.format_message(warning), warn_location(caller.file, start))
     end
 
-    case errors do
-      [] ->
+    # A `CompileError`: the Elixir tooling and the language servers place it
+    # at its line. The snippet in the description shows the column.
+    case SyntaxReport.first_error(errors) do
+      nil ->
         :ok
 
-      [first | _] ->
-        {{line, column}, {end_line, end_column}} = SyntaxReport.locate(first, markup, origin)
+      error ->
+        {{line, _column}, _end} = SyntaxReport.locate(error, markup, origin)
 
-        raise AshTypst.Sigil.SyntaxError,
+        raise CompileError,
           file: caller.file,
           line: line,
-          column: column,
-          end_line: column && end_line,
-          end_column: column && end_column,
-          description:
-            Enum.map_join(errors, "\n\n", &SyntaxReport.format(&1, markup, origin, caller.file)),
-          diagnostics: errors
+          description: SyntaxReport.describe(error, markup, origin)
     end
   end
 

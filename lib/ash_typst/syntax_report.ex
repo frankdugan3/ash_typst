@@ -38,6 +38,23 @@ defmodule AshTypst.SyntaxReport do
   end
 
   @doc """
+  The error to report: the first one in the markup, or `nil`.
+
+  After an error, Typst's parser recovers poorly: after an unclosed
+  delimiter, it parses the rest of the markup as code, so one typo gives an
+  error for each word after it. Like Elixir's own syntax errors, only the
+  first one is reported.
+  """
+  def first_error([]), do: nil
+
+  def first_error(errors) do
+    Enum.min_by(errors, fn
+      %Diagnostic{span: %Span{start: start}} -> start
+      %Diagnostic{span: nil} -> :infinity
+    end)
+  end
+
+  @doc """
   The `{line, column}` start and end of a diagnostic in the reported file.
 
   Empty ranges (e.g. "expected expression" at the end of input) are widened
@@ -69,9 +86,16 @@ defmodule AshTypst.SyntaxReport do
       |> Path.relative_to_cwd()
       |> Exception.format_file_line_column(line, column)
 
+    location <> " " <> describe(diagnostic, markup, origin)
+  end
+
+  @doc """
+  Formats a diagnostic as its message, followed by the snippet and the
+  hints, without location: the description of a `CompileError`, whose
+  message adds `file:line:`.
+  """
+  def describe(%Diagnostic{} = diagnostic, markup, origin) do
     IO.iodata_to_binary([
-      location,
-      " ",
       diagnostic.message,
       snippet(diagnostic, markup, origin),
       format_hints(diagnostic.hints)

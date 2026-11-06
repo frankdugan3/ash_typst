@@ -51,8 +51,10 @@ defmodule AshTypst.Resource.Transformers.ValidateTemplateSources do
     origin = SyntaxReport.file_origin()
     {errors, warnings} = SyntaxReport.diagnostics(markup)
 
-    if errors != [] do
-      report = Enum.map_join(errors, "\n\n", &SyntaxReport.format(&1, markup, origin, path))
+    # Only the first error: the ones after it are mostly its echoes
+    # (`SyntaxReport.first_error/1`).
+    if error = SyntaxReport.first_error(errors) do
+      report = SyntaxReport.format(error, markup, origin, path)
 
       raise DslError,
         module: module,
